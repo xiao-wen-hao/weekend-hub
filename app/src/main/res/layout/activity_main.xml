@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+  <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="周末局" android:textSize="28sp" android:textStyle="bold" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="先说想做什么，再由熟人圈慢慢成局" android:layout_marginBottom="16dp" />
+    <EditText android:id="@+id/baseUrl" android:layout_width="match_parent" android:layout_height="wrap_content" android:singleLine="true" android:hint="服务地址" android:text="http://10.0.2.2:3000" />
+    <EditText android:id="@+id/username" android:layout_width="match_parent" android:layout_height="wrap_content" android:singleLine="true" android:hint="用户名" />
+    <EditText android:id="@+id/password" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textPassword" android:hint="密码至少 8 位" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+      <Button android:id="@+id/login" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="登录" />
+      <Button android:id="@+id/register" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="注册" />
+    </LinearLayout>
+    <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="请先连接服务端" android:paddingVertical="12dp" />
+    <EditText android:id="@+id/circleName" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="新圈子的名称" />
+    <Button android:id="@+id/createCircle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="创建熟人圈" />
+    <EditText android:id="@+id/joinCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="朋友发来的 8 位邀请码" />
+    <Button android:id="@+id/joinCircle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="加入熟人圈" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="我的圈子和候选局" android:textSize="19sp" android:textStyle="bold" android:layout_marginTop="16dp" />
+    <LinearLayout android:id="@+id/circles" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+    <Button android:id="@+id/refresh" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="刷新" />
+  </LinearLayout>
+</ScrollView>

@@ -1,0 +1,11 @@
+*.iml
+.gradle/
+.idea/
+build/
+app/build/
+local.properties
+server/node_modules/
+server/dist/
+server/data/
+server/.env
+*.log

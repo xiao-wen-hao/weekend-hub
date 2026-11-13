@@ -1,0 +1,16 @@
+services:
+  weekend-host:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      DATA_DIR: /app/data
+      TOKENDANCE_API_KEY: ${TOKENDANCE_API_KEY}
+      TOKENDANCE_BASE_URL: ${TOKENDANCE_BASE_URL:-https://your-model-provider.example/gateway/v1}
+      TOKENDANCE_MODEL: ${TOKENDANCE_MODEL:-deepseek-v4.1-flash-1017}
+    volumes:
+      - weekend_data:/app/data
+    restart: unless-stopped
+volumes:
+  weekend_data:
