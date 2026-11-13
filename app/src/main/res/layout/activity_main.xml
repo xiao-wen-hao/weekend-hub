@@ -11,6 +11,7 @@
       <Button android:id="@+id/register" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="注册" />
     </LinearLayout>
     <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="请先连接服务端" android:paddingVertical="12dp" />
+    <Button android:id="@+id/discussions" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="打开活动讨论间" />
     <EditText android:id="@+id/circleName" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="新圈子的名称" />
     <Button android:id="@+id/createCircle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="创建熟人圈" />
     <EditText android:id="@+id/joinCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="朋友发来的 8 位邀请码" />

@@ -1,6 +1,7 @@
 package com.example.zhoumoju;
 
 import android.os.Bundle;
+import android.content.Intent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -32,6 +33,7 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.createCircle).setOnClickListener(v->request("POST","/api/circles",json("name",circleName.getText().toString()),x->refresh()));
         findViewById(R.id.joinCircle).setOnClickListener(v->request("POST","/api/circles/join",json("code",joinCode.getText().toString()),x->refresh()));
         findViewById(R.id.refresh).setOnClickListener(v->refresh());
+        findViewById(R.id.discussions).setOnClickListener(v->openDiscussion(null));
     }
     private JSONObject json(String key,Object value){JSONObject x=new JSONObject();try{x.put(key,value);}catch(Exception ignored){}return x;}
     private void auth(boolean register){JSONObject body=json("username",username.getText().toString());try{body.put("password",password.getText().toString());if(register)body.put("name",username.getText().toString());}catch(Exception ignored){}request("POST",register?"/api/register":"/api/login",body,x->{status.setText("已登录："+x.getJSONObject("user").getString("name"));refresh();});}
@@ -49,8 +51,9 @@ public class MainActivity extends AppCompatActivity {
         loadCircle(id);
     }
     private void loadCircle(String id){request("GET","/api/circles/"+id+"/intents",null,x->{JSONArray arr=x.getJSONArray("intents");for(int i=0;i<arr.length();i++){JSONObject intent=arr.getJSONObject(i);LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);circles.addView(row);addText(row,"意愿："+intent.getString("rawText")+"  "+intent.getString("status"));if("active".equals(intent.getString("status"))){Button withdraw=button("撤回",row);withdraw.setOnClickListener(v->request("POST","/api/intents/"+intent.optString("id")+"/withdraw",new JSONObject(),z->refresh()));}}});
-        request("GET","/api/circles/"+id+"/candidates",null,x->{JSONArray arr=x.getJSONArray("candidates");for(int i=0;i<arr.length();i++){JSONObject c=arr.getJSONObject(i);addText(circles,"候选局："+c.getString("category")+" / "+c.getString("windowId")+" · "+c.getInt("yesCount")+" 人愿意讨论");if("probing".equals(c.getString("status"))){Button yes=button("愿意讨论",circles);yes.setOnClickListener(v->request("POST","/api/candidates/"+c.optString("id")+"/respond",json("decision","yes"),z->refresh()));Button open=button("三人同意后开局",circles);open.setOnClickListener(v->request("POST","/api/candidates/"+c.optString("id")+"/open",new JSONObject(),z->{status.setText("讨论间已创建："+z.getString("roomId")+"。可在同一服务地址的网页端继续协商。");refresh();}));}}});
+        request("GET","/api/circles/"+id+"/candidates",null,x->{JSONArray arr=x.getJSONArray("candidates");for(int i=0;i<arr.length();i++){JSONObject c=arr.getJSONObject(i);addText(circles,"候选局："+c.getString("category")+" / "+c.getString("windowId")+" · "+c.getInt("yesCount")+" 人愿意讨论");if("probing".equals(c.getString("status"))){Button yes=button("愿意讨论",circles);yes.setOnClickListener(v->request("POST","/api/candidates/"+c.optString("id")+"/respond",json("decision","yes"),z->refresh()));Button open=button("三人同意后开局",circles);open.setOnClickListener(v->request("POST","/api/candidates/"+c.optString("id")+"/open",new JSONObject(),z->{status.setText("讨论间已创建");openDiscussion(z.getString("roomId"));}));}else if("opened".equals(c.getString("status"))){Button go=button("进入讨论间",circles);go.setOnClickListener(v->openDiscussion(c.optString("roomId")));}}});
     }
+    private void openDiscussion(String roomId){Intent intent=new Intent(this,DiscussionActivity.class);intent.putExtra("base",baseUrl.getText().toString().replaceAll("/$",""));intent.putExtra("cookie",cookie);if(roomId!=null)intent.putExtra("room",roomId);startActivity(intent);}
     private void addText(LinearLayout parent,String text){TextView view=new TextView(this);view.setText(text);view.setTextSize(16);view.setPadding(0,12,0,8);parent.addView(view);}
     private Button button(String text,LinearLayout parent){Button b=new Button(this);b.setText(text);parent.addView(b);return b;}
     @Override protected void onDestroy(){super.onDestroy();io.shutdownNow();}
