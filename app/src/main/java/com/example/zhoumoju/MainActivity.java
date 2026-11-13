@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -46,8 +48,11 @@ public class MainActivity extends AppCompatActivity {
     }catch(Exception e){runOnUiThread(()->status.setText("连接失败："+e.getMessage()));}});}
     private void refresh(){request("GET","/api/circles",null,result->{circles.removeAllViews();JSONArray list=result.getJSONArray("circles");if(list.length()==0)addText(circles,"还没有圈子。先创建一个，再邀请朋友加入。");for(int i=0;i<list.length();i++)showCircle(list.getJSONObject(i));});}
     private void showCircle(JSONObject item)throws Exception {String id=item.getString("id");addText(circles,item.getString("name")+"  邀请码："+item.getString("joinCode"));EditText thought=new EditText(this);thought.setHint("比如：周六下午想打桌游");circles.addView(thought);
+        String[] categories={"待确认","桌游","KTV","剧本杀","密室逃脱","电影","保龄球","逛街","散步聊天","火锅","烤肉","川菜","湘菜","日料","粤菜","西餐","简餐"};String[] windows={"时间待确认","上午","中午","下午","晚上"};String[] values={"","morning","noon","afternoon","evening"};
+        Spinner category=new Spinner(this);category.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,categories));circles.addView(category);Spinner time=new Spinner(this);time.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,windows));circles.addView(time);
+        Button preview=button("看看系统理解得对吗",circles);preview.setOnClickListener(v->request("POST","/api/intents/preview",json("text",thought.getText().toString()),x->{String guess=x.optString("category","");for(int j=1;j<categories.length;j++)if(categories[j].equals(guess))category.setSelection(j);String window=x.optString("windowId","");for(int j=1;j<values.length;j++)if(values[j].equals(window))time.setSelection(j);status.setText("请核对下面的活动和时段；不确定可保持待确认。");}));
         CheckBox matchAllowed=new CheckBox(this);matchAllowed.setText("允许在这个熟人圈内匹配");circles.addView(matchAllowed);CheckBox contactAllowed=new CheckBox(this);contactAllowed.setText("允许针对候选局私下询问我");circles.addView(contactAllowed);
-        Button send=button("投递意愿",circles);send.setOnClickListener(v->{JSONObject body=json("text",thought.getText().toString());try{body.put("matchAllowed",matchAllowed.isChecked());body.put("contactAllowed",contactAllowed.isChecked());}catch(Exception ignored){}request("POST","/api/circles/"+id+"/intents",body,x->{status.setText("已投递。系统理解为："+x.optString("category","待确认")+" / "+x.optString("windowId","时间待确认"));refresh();});});
+        Button send=button("确认投递",circles);send.setOnClickListener(v->{JSONObject body=json("text",thought.getText().toString());try{body.put("category",category.getSelectedItemPosition()==0?JSONObject.NULL:categories[category.getSelectedItemPosition()]);body.put("windowId",time.getSelectedItemPosition()==0?JSONObject.NULL:values[time.getSelectedItemPosition()]);body.put("matchAllowed",matchAllowed.isChecked());body.put("contactAllowed",contactAllowed.isChecked());}catch(Exception ignored){}request("POST","/api/circles/"+id+"/intents",body,x->{status.setText("意愿已保存");refresh();});});
         loadCircle(id);
     }
     private void loadCircle(String id){request("GET","/api/circles/"+id+"/intents",null,x->{JSONArray arr=x.getJSONArray("intents");for(int i=0;i<arr.length();i++){JSONObject intent=arr.getJSONObject(i);LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);circles.addView(row);addText(row,"意愿："+intent.getString("rawText")+"  "+intent.getString("status"));if("active".equals(intent.getString("status"))){Button withdraw=button("撤回",row);withdraw.setOnClickListener(v->request("POST","/api/intents/"+intent.optString("id")+"/withdraw",new JSONObject(),z->refresh()));}}});
