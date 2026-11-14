@@ -43,3 +43,8 @@
 - SQLite schema v5 新库及 v1 升级测试 PASS。
 - 三账号真实 API 联调 PASS：候选过期后列表状态更新为 expired，回应返回 409。
 - 服务端 typecheck PASS；8 项单元测试 PASS。
+
+## 2026-11-14 圈主转交
+
+- 多账号真实 API 联调 PASS：普通成员不能转交，圈主转交前不能退出，转交后新圈主权限生效、原圈主不能再次转交。
+- 服务端 typecheck PASS。
