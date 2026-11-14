@@ -37,3 +37,9 @@
 
 - 三账号真实 API 联调 PASS：修改类别后意愿转为 paused、确认时间清空；原候选在不足三人时关闭。
 - 重复开房返回 409；服务端 typecheck PASS。
+
+## 2026-11-14 候选时效
+
+- SQLite schema v5 新库及 v1 升级测试 PASS。
+- 三账号真实 API 联调 PASS：候选过期后列表状态更新为 expired，回应返回 409。
+- 服务端 typecheck PASS；8 项单元测试 PASS。

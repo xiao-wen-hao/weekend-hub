@@ -8,7 +8,7 @@
 | T02 身份与邀请 | A01 | auth/circle/API/UI | 昵称、成员查询、邀请轮换与有效期、退出已实现并联调；角色转交和前端管理待做 | PARTIAL |
 | T03 意愿领域模型 | A02 | intent/LLM/UI | 证据校验、解析降级、确认门槛和撤回已实现并联调；软硬条件、日期范围和前端编辑待做 | PARTIAL |
 | T04 候选匹配 | B01 | matching/candidate | 约束过滤、公平排序、去重限频；组合单测和 API 测试 | 待做 |
-| T05 邀约状态 | B02 | candidate/notification/UI | 私下回应、拒绝后人数不足自动关闭、成员资格复核和单次开房已实现；过期与通知待做 | PARTIAL |
+| T05 邀约状态 | B02 | candidate/notification/UI | 私下回应、拒绝后人数不足自动关闭、成员资格复核和单次开房已实现；候选 48 小时过期已联调；通知待做 | PARTIAL |
 | T06 活动规划 | C01/D01 | planner/activity/LLM | 字段状态、证据、无解、450ms 串行协调；方案测试 | 待做 |
 | T07 投票 | E01 | poll/API/UI | 冻结成员、弃权、锁定、幂等；并发 API 测试 | 待做 |
 | T08 版本与报名 | F01 | plan/RSVP/API/UI | 快照、同版接受、三态报名和变更保留；状态机测试 | 待做 |

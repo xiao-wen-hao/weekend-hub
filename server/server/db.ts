@@ -61,6 +61,13 @@ ALTER TABLE intents ADD COLUMN confirmed_at TEXT;
 `;
 if(version<4){db.transaction(()=>{db.exec(migration4);db.pragma("user_version = 4");})();}
 
+const migration5=`
+ALTER TABLE candidates ADD COLUMN expires_at TEXT;
+UPDATE candidates SET expires_at=strftime('%Y-%m-%dT%H:%M:%fZ',created_at,'+48 hours') WHERE expires_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_candidates_expiry ON candidates(status,expires_at);
+`;
+if(version<5){db.transaction(()=>{db.exec(migration5);db.pragma("user_version = 5");})();}
+
 export type RoomRow={id:string;title:string;date:string;brief_json:string;phase:string;current_proposal_id:string|null;revision:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();

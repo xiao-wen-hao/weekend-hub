@@ -1,3 +1,5 @@
+import Database from "better-sqlite3";
+import path from "node:path";
 const base=`http://127.0.0.1:${process.env.TEST_PORT??3000}/api`;
 async function client(n:number){let cookie="";const call=async(path:string,method="GET",body?:unknown)=>{const response=await fetch(base+path,{method,headers:{...(cookie?{Cookie:cookie}:{}),...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});const set=response.headers.get("set-cookie");if(set)cookie=set.split(";",1)[0];const raw=await response.text();let data:any;try{data=JSON.parse(raw);}catch{throw Error(`${response.status} ${raw.slice(0,500)}`);}if(!response.ok)throw Error(`${response.status} ${data.error}`);return data;};await call("/register","POST",{username:`test_${Date.now()}_${n}`,name:`用户${n}`,password:"test-password-123"});return call;}
 const [a,b,c]=await Promise.all([client(1),client(2),client(3)]);
@@ -23,5 +25,12 @@ const secondCandidate=(await a(`/circles/${second.id}/candidates`)).candidates[0
 const edit=await a(`/intents/${secondIntents[0].id}`,"PATCH",{category:"KTV"});
 if(edit.status!=="paused"||edit.confirmedAt!==null)throw Error("Edited intent stayed confirmed");
 const closed=(await a(`/circles/${second.id}/candidates`)).candidates[0];if(closed.status!=="closed")throw Error("Candidate stayed open after consent changed");
-console.log(JSON.stringify({ok:true,candidateId:candidate.id,roomId:opened.roomId,privateIntents:true,participants:3,editedIntentRevokesCandidate:true}));
+const third=await a("/circles","POST",{name:"过期测试圈"});
+await b("/circles/join","POST",{code:third.joinCode});await c("/circles/join","POST",{code:third.joinCode});
+for(const call of [a,b,c])await call(`/circles/${third.id}/intents`,"POST",{text:"周六下午想玩桌游",matchAllowed:true,contactAllowed:true,confirmed:true});
+const expiring=(await a(`/circles/${third.id}/candidates`)).candidates[0];if(!expiring)throw Error("Expiry candidate missing");
+const database=new Database(path.join(process.env.DATA_DIR!,"weekend.db"));database.prepare("UPDATE candidates SET expires_at=? WHERE id=?").run("2000-01-01T00:00:00.000Z",expiring.id);database.close();
+const expired=(await a(`/circles/${third.id}/candidates`)).candidates[0];if(expired.status!=="expired")throw Error("Candidate did not expire");
+let expiredBlocked=false;try{await a(`/candidates/${expiring.id}/respond`,"POST",{decision:"yes"});}catch(e){expiredBlocked=String(e).includes("409");}if(!expiredBlocked)throw Error("Expired candidate accepted response");
+console.log(JSON.stringify({ok:true,candidateId:candidate.id,roomId:opened.roomId,privateIntents:true,participants:3,editedIntentRevokesCandidate:true,expiryRevokesCandidate:true}));
 export {};
