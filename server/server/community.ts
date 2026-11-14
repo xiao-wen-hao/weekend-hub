@@ -7,11 +7,7 @@ import { FOODS, PLAYS } from "../shared/domain";
 import type { Brief } from "../shared/domain";
 
 const router=Router();
-db.exec(`CREATE TABLE IF NOT EXISTS circles(id TEXT PRIMARY KEY,name TEXT NOT NULL,owner_id TEXT NOT NULL,join_code TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS circle_members(circle_id TEXT NOT NULL,user_id TEXT NOT NULL,role TEXT NOT NULL,PRIMARY KEY(circle_id,user_id));
-CREATE TABLE IF NOT EXISTS intents(id TEXT PRIMARY KEY,circle_id TEXT NOT NULL,owner_id TEXT NOT NULL,raw_text TEXT NOT NULL,category TEXT,window_id TEXT,status TEXT NOT NULL,match_allowed INTEGER NOT NULL,contact_allowed INTEGER NOT NULL,expires_at TEXT NOT NULL,created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS candidates(id TEXT PRIMARY KEY,circle_id TEXT NOT NULL,category TEXT NOT NULL,window_id TEXT NOT NULL,status TEXT NOT NULL,member_key TEXT NOT NULL UNIQUE,room_id TEXT,created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS candidate_members(candidate_id TEXT NOT NULL,user_id TEXT NOT NULL,response TEXT NOT NULL,PRIMARY KEY(candidate_id,user_id));`);
+
 const auth=(req:any,res:any)=>{const u=currentUser(req);if(!u)res.status(401).json({error:"请先登录"});return u;};
 const inCircle=(circleId:string,userId:string)=>!!db.prepare("SELECT 1 FROM circle_members WHERE circle_id=? AND user_id=?").get(circleId,userId);
 const interpretIntent=(text:string)=>({category:[...PLAYS,...FOODS].find(x=>text.includes(x))??null,windowId:/上午|早上/.test(text)?"morning":/中午/.test(text)?"noon":/下午/.test(text)?"afternoon":/晚上|夜里/.test(text)?"evening":null});
