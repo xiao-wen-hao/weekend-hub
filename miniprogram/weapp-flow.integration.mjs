@@ -34,6 +34,8 @@ const web=await call(b,`/rooms/${roomId}`,'GET',undefined,true)
 assert.equal(weapp.proposal.id,web.proposal.id)
 assert.equal(weapp.proposal.version,web.proposal.version)
 assert.deepEqual(weapp.members,web.members)
+assert.equal(weapp.proposal.confirmations.length,3)
+assert.ok(weapp.proposal.confirmations.every(x=>x.decision===null))
 const segment=weapp.proposal.plan.segments[0]
 await call(b,`/rooms/${roomId}/attendance`,'POST',{proposalId:weapp.proposal.id,segmentId:segment.id,decision:'yes'})
 const webAfterSignup=await call(b,`/rooms/${roomId}`,'GET',undefined,true)

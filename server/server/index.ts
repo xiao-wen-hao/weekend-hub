@@ -70,7 +70,7 @@ function publicRoom(roomId:string,userId:string){
   return {joined:true,room:{id:room.id,title:room.title,date:room.date,phase:room.phase,hostId:room.created_by,revision:room.revision,coordinationPending:!!room.coordination_pending},brief,
     members:members.map(m=>({id:m.userId,name:m.name,hasAnswered:Object.keys(m.preference).length>0})),
     me:{id:userId,preference:own},messages,events,question,
-    proposal:proposal&&room.phase!=="blocked"?{...proposal,confirmed:confirmations.filter(c=>c.decision==="accept").length,myDecision:confirmations.find(c=>c.user_id===userId)?.decision??null,attendance,pendingFinal:finalizationMissing(proposal.plan)}:null,
+    proposal:proposal&&room.phase!=="blocked"?{...proposal,confirmed:confirmations.filter(c=>c.decision==="accept").length,confirmations:members.map(m=>({userId:m.userId,name:m.name,decision:confirmations.find(c=>c.user_id===m.userId)?.decision??null})),myDecision:confirmations.find(c=>c.user_id===userId)?.decision??null,attendance,pendingFinal:finalizationMissing(proposal.plan)}:null,
     poll:poll?{id:poll.id,facet:poll.facet,question:poll.question,options:(JSON.parse(poll.options_json) as {id:string;label:string;value:string|number}[]).map(o=>({...o,votes:pollVotes.find(v=>v.option_id===o.id)?.n??0})),myVote}:null};
 }
 
