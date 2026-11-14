@@ -81,7 +81,17 @@ ALTER TABLE rooms ADD COLUMN coordination_epoch INTEGER NOT NULL DEFAULT 0;
 `;
 if(version<7){db.transaction(()=>{db.exec(migration7);db.pragma("user_version = 7");})();}
 
-export type RoomRow={id:string;title:string;date:string;brief_json:string;phase:string;current_proposal_id:string|null;revision:number;coordination_pending:number;coordination_epoch:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
+// V2 public collaboration records are additive; existing private messages stay private.
+const migration8=`
+ALTER TABLE rooms ADD COLUMN mode TEXT NOT NULL DEFAULT 'template' CHECK(mode IN ('blank','template'));
+CREATE TABLE room_public_shares(id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id),author_id TEXT NOT NULL REFERENCES users(id),source_message_id TEXT REFERENCES messages(id),public_text TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE room_bulletins(id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id),version INTEGER NOT NULL,content_json TEXT NOT NULL,source_json TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(room_id,version));
+CREATE INDEX idx_public_shares_room ON room_public_shares(room_id,created_at);
+CREATE INDEX idx_bulletins_room ON room_bulletins(room_id,version);
+`;
+if(version<8){db.transaction(()=>{db.exec(migration8);db.pragma("user_version = 8");})();}
+
+export type RoomRow={id:string;title:string;date:string;mode:'blank'|'template';brief_json:string;phase:string;current_proposal_id:string|null;revision:number;coordination_pending:number;coordination_epoch:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();
 export const uid=()=>crypto.randomUUID();

@@ -4,6 +4,7 @@ import type { Brief, MemberPreference, Plan, PlanLocks, Preference } from "../sh
 import { negotiatePlan } from "../shared/planner";
 import { describePlanChanges } from "../shared/plan-diff";
 import { enqueueNotification } from "./notification";
+import {refreshBulletin} from './bulletin';
 
 type PollOption={id:string;label:string;value:string|number};
 type PollRow={id:string;room_id:string;proposal_id:string|null;facet:string;question:string;options_json:string;status:string;created_at:string};
@@ -47,12 +48,12 @@ export function coordinateRoom(roomId:string,expected:CoordinationSnapshot|null=
   const where="id=? AND revision=? AND coordination_epoch=? AND current_proposal_id IS ? AND coordination_pending=1 AND phase!='final'";
   const args=[roomId,expected.revision,expected.epoch,expected.proposalId] as const;
   if(!candidate){
-    db.transaction(()=>{const changed=db.prepare(`UPDATE rooms SET phase='blocked',coordination_pending=0,updated_at=? WHERE ${where}`).run(now(),...args);if(changed.changes&&room.phase!=="blocked")emitEvent(roomId,"blocked","目前还没有满足已知时间条件的全员安排，主持人正在私下寻找可调整的部分。");})();
+    db.transaction(()=>{const changed=db.prepare(`UPDATE rooms SET phase='blocked',coordination_pending=0,updated_at=? WHERE ${where}`).run(now(),...args);if(changed.changes){if(room.phase!=="blocked")emitEvent(roomId,"blocked","目前还没有满足已知时间条件的全员安排，主持人正在私下寻找可调整的部分。");refreshBulletin(roomId);}})();
     return;
   }
   if(current&&planSignature(current.plan)===planSignature(candidate)){
     const changed=db.prepare(`UPDATE rooms SET phase=CASE WHEN phase='blocked' THEN 'discussing' ELSE phase END,coordination_pending=0,updated_at=? WHERE ${where}`).run(now(),...args);
-    if(changed.changes)maybeAutoPoll(roomId,brief,members,locks,candidate);
+    if(changed.changes){refreshBulletin(roomId);maybeAutoPoll(roomId,brief,members,locks,candidate);}
     return;
   }
   const version=(current?.version??0)+1,proposalId=uid(),stamp=now();
@@ -62,6 +63,7 @@ export function coordinateRoom(roomId:string,expected:CoordinationSnapshot|null=
     db.prepare("INSERT INTO proposals(id,room_id,version,plan_json,kind,created_at) VALUES(?,?,?,?,?,?)").run(proposalId,roomId,version,JSON.stringify(candidate),"candidate",stamp);
     const changes=current?describePlanChanges(current.plan,candidate):["初始草案"];
     emitEvent(roomId,"proposal",`主持人更新了第 ${version} 版讨论方案。${changes.length?`本次变更：${changes.join("、")}。`:""}请重新查看并确认。`);
+    refreshBulletin(roomId);
     for(const m of members)enqueueNotification(m.userId,"plan_updated",{roomId,version,changes},`plan:${roomId}:${version}:${m.userId}`);
     return true;
   })();
@@ -100,6 +102,7 @@ export function createPoll(roomId:string,facet:string,options:PollOption[],quest
   const pollId=uid(),proposal=currentPlan(roomId);
   db.prepare("INSERT INTO polls(id,room_id,proposal_id,facet,question,options_json,status,created_at) VALUES(?,?,?,?,?,?,'open',?)").run(pollId,roomId,proposal?.id??null,facet,question,JSON.stringify(options),now());
   emitEvent(roomId,"poll",source==="auto"?"大家的想法出现分歧，主持人发起了一轮匿名投票。":"发起人发起了一轮匿名投票。");
+  refreshBulletin(roomId);
   return pollId;
 }
 
@@ -135,6 +138,7 @@ export function closePoll(roomId:string,pollId:string){
     if(!changed.changes)return false;
     db.prepare("UPDATE polls SET status='closed',closed_at=? WHERE id=?").run(now(),pollId);
     emitEvent(roomId,"poll_result",`匿名投票结束：「${winner.label}」获得最多支持，主持人正在检查新安排。`);
+    refreshBulletin(roomId);
     return true;
   })();
   if(closed)scheduleRoom(roomId,50);

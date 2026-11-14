@@ -9,10 +9,12 @@ import { activePoll, closePoll, createPoll, currentPlan, emitEvent, getMembers, 
 import { initialPlan, nextQuestion, conflictQuestion, validatePreferencePatch, finalizationMissing } from "../shared/planner";
 import type { Brief, Plan, PlanLocks, Preference, Question } from "../shared/domain";
 import { FOODS, PLAYS, START_WINDOWS } from "../shared/domain";
+import {nextSaturdayShanghai} from '../shared/calendar';
 import { interpret } from "./language";
 import community from "./community";
 import management from "./management";
 import notification,{enqueueNotification} from "./notification";
+import {buildBulletin,currentBulletin,refreshBulletin} from './bulletin';
 
 const app=express();
 app.set("trust proxy",1);
@@ -62,13 +64,14 @@ function publicRoom(roomId:string,userId:string){
   const myVote=poll?(db.prepare("SELECT option_id FROM poll_votes WHERE poll_id=? AND user_id=?").get(poll.id,userId) as {option_id:string}|undefined)?.option_id??null:null;
   const own=members.find(m=>m.userId===userId)!.preference;
   const targeted=conflictQuestion(room.phase==="blocked"?null:proposal?.plan??null,members);
-  const question=room.phase==="blocked"&&targeted?.userId===userId?targeted.question:proposal?nextQuestion(proposal.plan,own):null;
+  const question=room.phase==="blocked"&&targeted?.userId===userId?targeted.question:null;
   const messages=db.prepare("SELECT id,role,body,created_at AS createdAt FROM messages WHERE room_id=? AND user_id=? ORDER BY created_at,id LIMIT 120").all(roomId,userId);
   const events=db.prepare("SELECT id,event_type AS type,public_text AS text,created_at AS createdAt FROM room_events WHERE room_id=? ORDER BY created_at DESC LIMIT 15").all(roomId).reverse();
   const confirmations=proposal?db.prepare("SELECT user_id,decision FROM confirmations WHERE proposal_id=?").all(proposal.id) as {user_id:string;decision:string}[]:[];
   const attendance=proposal?db.prepare("SELECT a.segment_id AS segmentId,a.user_id AS userId,u.display_name AS name,a.decision FROM attendance a JOIN users u ON u.id=a.user_id WHERE a.proposal_id=?").all(proposal.id):[];
-  return {joined:true,room:{id:room.id,title:room.title,date:room.date,phase:room.phase,hostId:room.created_by,revision:room.revision,coordinationPending:!!room.coordination_pending},brief,
-    members:members.map(m=>({id:m.userId,name:m.name,hasAnswered:Object.keys(m.preference).length>0})),
+  const bulletin=currentBulletin(roomId)??(buildBulletin(roomId)?{id:null,version:0,...buildBulletin(roomId)!}:null);
+  return {joined:true,room:{id:room.id,title:room.title,date:room.date,mode:room.mode,phase:room.phase,hostId:room.created_by,revision:room.revision,coordinationPending:!!room.coordination_pending},brief:room.mode==='blank'?null:brief,bulletin,
+    members:members.map(m=>({id:m.userId,name:m.name,hasAnswered:Object.keys(m.preference).length>0||!!db.prepare("SELECT 1 FROM messages WHERE room_id=? AND user_id=? AND role='user' LIMIT 1").get(roomId,m.userId)})),
     me:{id:userId,preference:own},messages,events,question,
     proposal:proposal&&room.phase!=="blocked"?{...proposal,confirmed:confirmations.filter(c=>c.decision==="accept").length,confirmations:members.map(m=>({userId:m.userId,name:m.name,decision:confirmations.find(c=>c.user_id===m.userId)?.decision??null})),myDecision:confirmations.find(c=>c.user_id===userId)?.decision??null,attendance,pendingFinal:finalizationMissing(proposal.plan)}:null,
     poll:poll?{id:poll.id,facet:poll.facet,question:poll.question,options:(JSON.parse(poll.options_json) as {id:string;label:string;value:string|number}[]).map(o=>({...o,votes:pollVotes.find(v=>v.option_id===o.id)?.n??0})),myVote}:null};
@@ -95,18 +98,23 @@ app.get("/api/rooms",(req,res)=>{
   const rows=db.prepare("SELECT r.id,r.title,r.date,r.phase,r.updated_at AS updatedAt,(SELECT COUNT(*) FROM members m2 WHERE m2.room_id=r.id) AS memberCount FROM rooms r JOIN members m ON m.room_id=r.id WHERE m.user_id=? ORDER BY r.updated_at DESC").all(user.id);
   res.json({rooms:rows});
 });
-app.post("/api/rooms",(req,res)=>{
+app.post("/api/rooms",async(req,res)=>{
   const user=userOrFail(req,res);if(!user)return;
-  const brief=validateBrief(req.body);if(!brief)return fail(res,"请填写聚会名称和日期");
+  const idea=String(req.body.idea??'').trim().slice(0,600),mode=req.body.mode==='blank'?'blank':'template';
+  const input=mode==='blank'?{...req.body,title:String(req.body.title??'').trim()||'周末讨论',date:req.body.date||nextSaturdayShanghai()}:req.body;
+  const brief=validateBrief(input);if(!brief)return fail(res,"请填写聚会名称和日期");
   const count=(db.prepare("SELECT COUNT(*) AS n FROM rooms WHERE created_by=?").get(user.id) as {n:number}).n;
   if(count>=30)return fail(res,"账号的讨论间数量已达上限",429);
-  const roomId=uid(),proposalId=uid(),stamp=now(),plan=initialPlan(brief);
+  const understanding=mode==='blank'&&idea?await interpret(idea,null,[]):null;
+  const roomId=uid(),proposalId=mode==='template'?uid():null,stamp=now(),plan=mode==='template'?initialPlan(brief):null;
   db.transaction(()=>{
-    db.prepare("INSERT INTO rooms(id,title,date,brief_json,phase,current_proposal_id,revision,locks_json,created_by,created_at,updated_at) VALUES(?,?,?,?,'draft',?,0,'{}',?,?,?)").run(roomId,brief.title,brief.date,JSON.stringify(brief),proposalId,user.id,stamp,stamp);
+    db.prepare("INSERT INTO rooms(id,title,date,mode,brief_json,phase,current_proposal_id,revision,locks_json,created_by,created_at,updated_at) VALUES(?,?,?,?,?,'draft',?,0,'{}',?,?,?)").run(roomId,brief.title,brief.date,mode,JSON.stringify(brief),proposalId,user.id,stamp,stamp);
     db.prepare("INSERT INTO members(room_id,user_id,joined_at) VALUES(?,?,?)").run(roomId,user.id,stamp);
     db.prepare("INSERT INTO preferences(room_id,user_id,data_json,updated_at) VALUES(?,?,'{}',?)").run(roomId,user.id,stamp);
-    db.prepare("INSERT INTO proposals(id,room_id,version,plan_json,kind,created_at) VALUES(?,?,1,?,'initial',?)").run(proposalId,roomId,JSON.stringify(plan),stamp);
-    emitEvent(roomId,"initial","主持人根据发起人的想法放出了第一版草案。时间、活动和预算都可以继续商量。" );
+    if(understanding){const patch=validatePreferencePatch(understanding.patch);db.prepare('UPDATE preferences SET data_json=? WHERE room_id=? AND user_id=?').run(JSON.stringify(patch),roomId,user.id);db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'user',?,?)").run(uid(),roomId,user.id,idea,stamp);db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'assistant',?,?)").run(uid(),roomId,user.id,understanding.reply,new Date(Date.now()+1).toISOString());}
+    if(proposalId&&plan)db.prepare("INSERT INTO proposals(id,room_id,version,plan_json,kind,created_at) VALUES(?,?,1,?,'initial',?)").run(proposalId,roomId,JSON.stringify(plan),stamp);
+    emitEvent(roomId,"initial",mode==='blank'?'讨论间已建立，大家可以先说想法，再整理共同安排。':"主持人根据发起人的想法放出了第一版草案。时间、活动和预算都可以继续商量。" );
+    refreshBulletin(roomId);
   })();
   res.status(201).json({id:roomId});
 });
@@ -115,6 +123,24 @@ app.get("/api/rooms/:id",(req,res)=>{
   const room=getRoom(req.params.id);if(!room)return fail(res,"讨论间不存在",404);
   if(!isMember(room.id,user.id)){res.json({joined:false,room:{id:room.id,title:room.title,date:room.date}});return;}
   res.json(publicRoom(room.id,user.id));
+});
+app.get('/api/rooms/:id/bulletins',(req,res)=>{
+  const access=roomMember(req,res);if(!access)return;
+  const rows=db.prepare('SELECT id,version,content_json AS contentJson,source_json AS sourceJson,created_at AS createdAt FROM room_bulletins WHERE room_id=? ORDER BY version DESC LIMIT 30').all(access.room.id) as {id:string;version:number;contentJson:string;sourceJson:string;createdAt:string}[];
+  res.json({bulletins:rows.map(r=>({id:r.id,version:r.version,content:JSON.parse(r.contentJson),sources:JSON.parse(r.sourceJson),createdAt:r.createdAt}))});
+});
+app.post('/api/rooms/:id/share',(req,res)=>{
+  const access=roomMember(req,res);if(!access)return;
+  if(access.room.phase==='final')return fail(res,'聚会已定案，不能再公开新意见',409);
+  const publicText=String(req.body.publicText??'').trim(),sourceMessageId=String(req.body.sourceMessageId??'').trim();
+  if(req.body.explicitApproval!==true||!publicText||publicText.length>300)return fail(res,'请确认将展示的具体内容，限 300 字');
+  if(sourceMessageId&&!db.prepare("SELECT 1 FROM messages WHERE id=? AND room_id=? AND user_id=? AND role='user'").get(sourceMessageId,access.room.id,access.user.id))return fail(res,'只能选择自己的私人原话',403);
+  db.transaction(()=>{
+    db.prepare('INSERT INTO room_public_shares(id,room_id,author_id,source_message_id,public_text,created_at) VALUES(?,?,?,?,?,?)').run(uid(),access.room.id,access.user.id,sourceMessageId||null,publicText,now());
+    emitEvent(access.room.id,'share',`${access.user.display_name}主动公开分享了一条想法。`);
+    refreshBulletin(access.room.id);
+  })();
+  res.json(publicRoom(access.room.id,access.user.id));
 });
 app.post("/api/rooms/:id/join",(req,res)=>{
   const user=userOrFail(req,res);if(!user)return;
@@ -129,6 +155,7 @@ app.post("/api/rooms/:id/join",(req,res)=>{
       db.prepare("INSERT INTO preferences(room_id,user_id,data_json,updated_at) VALUES(?,?,'{}',?)").run(room.id,user.id,now());
       db.prepare("UPDATE rooms SET revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,updated_at=? WHERE id=?").run(now(),room.id);
       emitEvent(room.id,"joined","有新朋友加入了讨论间。" );
+      refreshBulletin(room.id);
     })();scheduleRoom(room.id);
   }
   res.json(publicRoom(room.id,user.id));
@@ -171,9 +198,9 @@ app.post("/api/rooms/:id/message",async(req,res)=>{
   db.transaction(()=>{
     db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'user',?,?)").run(uid(),access.room.id,access.user.id,text,now());
     db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'assistant',?,?)").run(uid(),access.room.id,access.user.id,reply,new Date(Date.now()+1).toISOString());
-    if(Object.keys(patch).length){db.prepare("UPDATE preferences SET data_json=?,updated_at=? WHERE room_id=? AND user_id=?").run(JSON.stringify({...pref,...patch}),now(),access.room.id,access.user.id);if(latest.current_proposal_id)db.prepare("DELETE FROM confirmations WHERE proposal_id=? AND user_id=?").run(latest.current_proposal_id,access.user.id);db.prepare("UPDATE rooms SET revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,phase='discussing',updated_at=? WHERE id=?").run(now(),access.room.id);}
+    if(Object.keys(patch).length){db.prepare("UPDATE preferences SET data_json=?,updated_at=? WHERE room_id=? AND user_id=?").run(JSON.stringify({...pref,...patch}),now(),access.room.id,access.user.id);if(latest.current_proposal_id){db.prepare("DELETE FROM confirmations WHERE proposal_id=? AND user_id=?").run(latest.current_proposal_id,access.user.id);db.prepare("UPDATE rooms SET revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,phase='discussing',updated_at=? WHERE id=?").run(now(),access.room.id);}}
   })();
-  if(Object.keys(patch).length)scheduleRoom(access.room.id);
+  if(Object.keys(patch).length&&latest.current_proposal_id)scheduleRoom(access.room.id);
   res.json({...publicRoom(access.room.id,access.user.id),interpretation:{source:result.source,applied:Object.keys(patch),suggestions:result.suggestions}});
 });
 app.post("/api/rooms/:id/confirm",(req,res)=>{
@@ -194,6 +221,7 @@ app.post("/api/rooms/:id/confirm",(req,res)=>{
     const n=(db.prepare("SELECT COUNT(*) AS n FROM confirmations WHERE proposal_id=? AND decision='accept'").get(proposal.id) as {n:number}).n;
     const total=(db.prepare("SELECT COUNT(*) AS n FROM members WHERE room_id=?").get(access.room.id) as {n:number}).n;
     if(n===total&&total>=3){const changed=db.prepare("UPDATE rooms SET phase='final',updated_at=? WHERE id=? AND current_proposal_id=? AND coordination_pending=0 AND phase!='final'").run(now(),access.room.id,proposal.id);if(!changed.changes)throw Error("confirmation_version_changed");emitEvent(access.room.id,"final","所有参与者都确认了同一版方案，这场聚会正式定案。" );for(const member of getMembers(access.room.id))enqueueNotification(member.userId,"room_final",{roomId:access.room.id,version:proposal.version},`final:${access.room.id}:${proposal.version}:${member.userId}`);}
+    refreshBulletin(access.room.id);
     return null;
   })();
   if(outcome)return fail(res,outcome,409);
@@ -239,4 +267,5 @@ app.use((error:unknown,_req:express.Request,res:express.Response,next:express.Ne
 const port=Number(process.env.PORT??3000),prod=process.argv.includes("--prod");
 if(prod){const dist=path.resolve("dist");app.use(express.static(dist));app.get("/{*any}",(_req,res)=>res.sendFile(path.join(dist,"index.html")));}
 else{const vite=await createViteServer({server:{middlewareMode:true},appType:"spa"});app.use(vite.middlewares);}
+db.transaction(()=>{for(const row of db.prepare('SELECT id FROM rooms WHERE NOT EXISTS (SELECT 1 FROM room_bulletins WHERE room_id=rooms.id)').all() as {id:string}[])refreshBulletin(row.id);})();
 app.listen(port,"0.0.0.0",()=>{recoverPendingCoordination();console.log(`Weekend Host ready at http://localhost:${port}`);});
