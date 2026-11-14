@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "build:android": "vite build --mode android",
-    "sync:android": "npm run build:android && cap sync android"
+    "sync:android": "npm run build:android && cap sync android",
+    "demo:seed": "tsx scripts/seed-demo.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",

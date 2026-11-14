@@ -13,7 +13,7 @@ export function validateIntentOutput(text:string,raw:unknown):IntentInterpretati
   const x=raw&&typeof raw==="object"?raw as Record<string,unknown>:{};
   const evidence=x.evidence&&typeof x.evidence==="object"?x.evidence as Record<string,unknown>:{};
   const category=typeof x.category==="string"&&categories.includes(x.category)&&typeof evidence.category==="string"&&text.includes(evidence.category)&&evidence.category.includes(x.category)?x.category:null;
-  const windowId=["morning","noon","afternoon","evening"].includes(String(x.windowId))&&typeof evidence.time==="string"&&text.includes(evidence.time)?x.windowId as IntentInterpretation["windowId"]:null;
+  const windowId=["morning","noon","afternoon","evening"].includes(String(x.windowId))&&typeof evidence.time==="string"&&text.includes(evidence.time)&&windows[x.windowId as keyof typeof windows].test(evidence.time)?x.windowId as IntentInterpretation["windowId"]:null;
   return {category,windowId,evidence:{category:category?String(evidence.category):null,time:windowId?String(evidence.time):null},source:"model"};
 }
 export async function interpretIntent(text:string):Promise<IntentInterpretation>{

@@ -1,7 +1,6 @@
 import {useCallback,useEffect,useState} from "react";
 import {FOODS,PLAYS} from "../shared/domain";
 import "./circles.css";
-import {apiRequest} from "./api";
 
 type Circle={id:string;name:string;role:"owner"|"admin"|"member"};
 type Member={id:string;name:string;role:string};
@@ -11,7 +10,11 @@ type Preview={category:string|null;windowId:string|null;evidence:{category:strin
 type Notice={id:string;kind:string;payload:{circleId?:string;candidateId?:string;roomId?:string;category?:string;version?:number;changes?:string[]};status:string;createdAt:string};
 const times=[{id:"morning",name:"上午"},{id:"noon",name:"中午"},{id:"afternoon",name:"下午"},{id:"evening",name:"晚上"}];
 const timeName=(id:string)=>times.find(t=>t.id===id)?.name??id;
-async function call<T>(path:string,method="GET",body?:unknown):Promise<T>{return apiRequest<T>(path,method,body);}
+async function call<T>(path:string,method="GET",body?:unknown):Promise<T>{
+  const response=await fetch(`/api${path}`,{method,credentials:"same-origin",cache:"no-store",headers:body===undefined?undefined:{"Content-Type":"application/json"},body:body===undefined?undefined:JSON.stringify(body)});
+  const raw=await response.text();let value:any;try{value=JSON.parse(raw);}catch{throw Error("服务暂时不可用，请稍后重试");}
+  if(!response.ok)throw Error(value.error??`请求失败 (${response.status})`);return value as T;
+}
 
 export default function CircleHub({onOpenRoom,userId}:{onOpenRoom:(id:string)=>void;userId:string}){
   const [circles,setCircles]=useState<Circle[]>([]),[selected,setSelected]=useState<string|null>(null);
@@ -40,7 +43,7 @@ export default function CircleHub({onOpenRoom,userId}:{onOpenRoom:(id:string)=>v
     {!!circles.length&&<><div className="circle-tabs">{circles.map(c=><button key={c.id} className={selected===c.id?"active":""} onClick={()=>{setSelected(c.id);clearForm();}}>{c.name}</button>)}</div>{selected&&<div className="circle-content"><div className="circle-section"><div className="circle-section-head"><h3>圈子成员 <small>{members.length} 人</small></h3>{selectedCircle?.role!=="member"&&<button className="circle-link" disabled={busy} onClick={()=>void run(async()=>{const x=await call<{joinCode:string}>(`/circles/${selected}/invite/rotate`,"POST",{hours:168});setNewCode(x.joinCode);},"新邀请码已生成，旧码失效")}>更新邀请码</button>}</div><div className="circle-members">{members.map(m=><div key={m.id}><span>{m.name}{m.role==="owner"?" · 圈主":""}</span>{selectedCircle?.role==="owner"&&m.id!==userId&&<button disabled={busy} onClick={()=>{if(!window.confirm(`将圈主转交给 ${m.name}？`))return;void run(async()=>{await call(`/circles/${selected}/owner`,"POST",{userId:m.id});await loadCircles();await loadDetails(selected);},"圈主已转交");}}>转交圈主</button>}</div>)}</div>{selectedCircle?.role!=="owner"&&<button className="circle-link" disabled={busy} onClick={()=>{if(!window.confirm("退出这个熟人圈？你在圈内的候选局回应会失效。"))return;void run(async()=>{await call(`/circles/${selected}/leave`,"POST",{});await loadCircles();clearForm();},"已退出熟人圈");}}>退出熟人圈</button>}</div>
       <div className="circle-section"><h3>{editingId?"修改我的意愿":"说说想做什么"}</h3><p className="circle-muted">活动和时段会先让你确认；只有同时授权匹配与私下询问，才会参与候选局。</p><textarea value={text} onChange={e=>{setText(e.target.value);setPreview(null);}} maxLength={500} placeholder="例如：周六下午想玩桌游，吃完晚饭前回家"/>
         <div className="circle-actions"><button className="circle-secondary" disabled={busy||!text.trim()} onClick={()=>void run(async()=>{const x=await call<Preview>("/intents/preview","POST",{text});setPreview(x);setCategory(x.category??"");setWindowId(x.windowId??"");},"请核对系统理解的活动和时段")}>看看系统理解得对吗</button>{editingId&&<button className="circle-link" onClick={clearForm}>取消修改</button>}</div>
-        {preview&&<p className="circle-evidence">提取依据：{[preview.evidence.category,preview.evidence.time].filter(Boolean).join("、")||"没有明确提到活动或时段，请手动选择"}</p>}
+        {preview&&<p className="circle-evidence">{preview.source==="model"?"AI 从原话理解":"基础识别（模型暂不可用）"} · 依据：{[preview.evidence.category,preview.evidence.time].filter(Boolean).join("、")||"没有明确提到活动或时段，请手动选择"}</p>}
         <div className="circle-fields"><label>活动类别<select value={category} onChange={e=>setCategory(e.target.value)}><option value="">请选择</option><optgroup label="吃饭">{FOODS.map(x=><option key={x}>{x}</option>)}</optgroup><optgroup label="玩乐">{PLAYS.map(x=><option key={x}>{x}</option>)}</optgroup></select></label><label>时段<select value={windowId} onChange={e=>setWindowId(e.target.value)}><option value="">请选择</option>{times.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select></label></div>
         <label className="circle-check"><input type="checkbox" checked={matchAllowed} onChange={e=>{setMatchAllowed(e.target.checked);if(!e.target.checked)setContactAllowed(false);}}/>允许在这个圈子里匹配</label><label className="circle-check"><input type="checkbox" checked={contactAllowed} onChange={e=>setContactAllowed(e.target.checked)} disabled={!matchAllowed}/>允许针对候选局私下询问我</label>
         <button className="circle-primary" disabled={busy||!text.trim()||!category||!windowId} onClick={()=>void run(async()=>{const body={text,category,windowId,matchAllowed,contactAllowed,confirmed:true,...(editingId?{status:"active"}:{})};if(editingId)await call(`/intents/${editingId}`,"PATCH",body);else await call(`/circles/${selected}/intents`,"POST",body);clearForm();await loadDetails(selected);},editingId?"意愿已更新":"意愿已保存并确认")}>{editingId?"确认修改":"确认投递"}</button>

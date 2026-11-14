@@ -10,3 +10,7 @@ test("model field without verbatim evidence is discarded",()=>{
   const value=validateIntentOutput("周末想聚聚",{category:"桌游",windowId:"evening",evidence:{category:"桌游",time:"晚上"}});
   assert.equal(value.category,null);assert.equal(value.windowId,null);
 });
+test("time evidence must agree with the extracted window",()=>{
+  const value=validateIntentOutput("周六下午玩桌游",{category:"桌游",windowId:"evening",evidence:{category:"桌游",time:"下午"}});
+  assert.equal(value.category,"桌游");assert.equal(value.windowId,null);
+});

@@ -166,7 +166,7 @@ app.post("/api/rooms/:id/message",async(req,res)=>{
     if(Object.keys(patch).length){db.prepare("UPDATE preferences SET data_json=?,updated_at=? WHERE room_id=? AND user_id=?").run(JSON.stringify({...pref,...patch}),now(),access.room.id,access.user.id);if(current)db.prepare("DELETE FROM confirmations WHERE proposal_id=? AND user_id=?").run(current.id,access.user.id);db.prepare("UPDATE rooms SET revision=revision+1,phase='discussing',updated_at=? WHERE id=?").run(now(),access.room.id);}
   })();
   if(Object.keys(patch).length)scheduleRoom(access.room.id);
-  res.json(publicRoom(access.room.id,access.user.id));
+  res.json({...publicRoom(access.room.id,access.user.id),interpretation:{source:result.source,applied:Object.keys(patch),suggestions:result.suggestions}});
 });
 app.post("/api/rooms/:id/confirm",(req,res)=>{
   const access=roomMember(req,res);if(!access)return;
