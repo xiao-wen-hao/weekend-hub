@@ -3,7 +3,7 @@ import express from "express";
 import path from "node:path";
 import fs from "node:fs";
 import { createServer as createViteServer } from "vite";
-import { db, getRoom, isMember, now, uid } from "./db";
+import { db, getRoom, getUser, isMember, now, uid } from "./db";
 import { clearSession, createSession, currentUser, register, verify } from "./auth";
 import { activePoll, closePoll, coordinateRoom, createPoll, currentPlan, emitEvent, getMembers, pollOptions, scheduleRoom, vote } from "./coordinator";
 import { initialPlan, nextQuestion, conflictQuestion, validatePreferencePatch, finalizationMissing } from "../shared/planner";
@@ -81,7 +81,7 @@ app.post("/api/register",(req,res)=>{
 });
 app.post("/api/login",(req,res)=>{
   const id=verify(String(req.body.username??""),String(req.body.password??""));if(!id)return fail(res,"用户名或密码不正确",401);
-  createSession(req,res,id);const user=currentUser(req)!;res.json({user:{id:user.id,username:user.username,name:user.display_name}});
+  createSession(req,res,id);const user=getUser(id)!;res.json({user:{id:user.id,username:user.username,name:user.display_name}});
 });
 app.post("/api/logout",(req,res)=>{clearSession(req,res);res.json({ok:true});});
 app.get("/api/rooms",(req,res)=>{
