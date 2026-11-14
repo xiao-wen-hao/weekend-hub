@@ -44,6 +44,16 @@ CREATE INDEX IF NOT EXISTS idx_outbox_pending ON notification_outbox(user_id,sta
 `;
 if(version<2){db.transaction(()=>{db.exec(migration2);db.pragma("user_version = 2");})();}
 
+// Existing invite codes remain valid for seven days after upgrading.
+const migration3=`
+ALTER TABLE circles ADD COLUMN invite_expires_at TEXT;
+ALTER TABLE circle_members ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+UPDATE circles SET invite_expires_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','+7 days') WHERE invite_expires_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_circle_active_member ON circle_members(circle_id,user_id,status);
+`;
+if(version<3){db.transaction(()=>{db.exec(migration3);db.pragma("user_version = 3");})();}
+
+
 
 export type RoomRow={id:string;title:string;date:string;brief_json:string;phase:string;current_proposal_id:string|null;revision:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
@@ -52,3 +62,4 @@ export const uid=()=>crypto.randomUUID();
 export const getRoom=(id:string)=>db.prepare("SELECT * FROM rooms WHERE id=?").get(id) as RoomRow|undefined;
 export const getUser=(id:string)=>db.prepare("SELECT * FROM users WHERE id=?").get(id) as UserRow|undefined;
 export const isMember=(roomId:string,userId:string)=>!!db.prepare("SELECT 1 FROM members WHERE room_id=? AND user_id=?").get(roomId,userId);
+

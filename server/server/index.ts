@@ -11,6 +11,7 @@ import type { Brief, Plan, PlanLocks, Preference, Question } from "../shared/dom
 import { FOODS, PLAYS, START_WINDOWS } from "../shared/domain";
 import { interpret } from "./language";
 import community from "./community";
+import management from "./management";
 
 const app=express();
 app.set("trust proxy",1);
@@ -68,6 +69,7 @@ function publicRoom(roomId:string,userId:string){
 
 app.get("/api/health",(_req,res)=>res.json({ok:true}));
 app.use("/api",community);
+app.use("/api",management);
 app.get("/api/me",(req,res)=>{const user=currentUser(req);res.json({user:user?{id:user.id,username:user.username,name:user.display_name}:null});});
 app.post("/api/register",(req,res)=>{
   const username=String(req.body.username??"").trim().toLowerCase(),name=String(req.body.name??"").trim(),password=String(req.body.password??"");

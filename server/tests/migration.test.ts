@@ -12,7 +12,7 @@ test("fresh database and existing version one database migrate without data loss
   const boot=()=>{
     const run=spawnSync(process.execPath,["--import","tsx","-e","import('./server/db.ts').then(m=>{console.log(m.db.pragma('user_version',{simple:true}));m.db.close()})"],{cwd:process.cwd(),env:{...process.env,DATA_DIR:dir},encoding:"utf8"});
     assert.equal(run.status,0,run.stderr);
-    assert.match(run.stdout,/2/);
+    assert.match(run.stdout,/3/);
   };
   try{
     boot();
@@ -27,3 +27,4 @@ test("fresh database and existing version one database migrate without data loss
     upgraded.close();
   }finally{if(dir.startsWith(tmpdir()+sep))rmSync(dir,{recursive:true,force:true});}
 });
+
