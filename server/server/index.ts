@@ -18,11 +18,17 @@ const app=express();
 app.set("trust proxy",1);
 app.disable("x-powered-by");
 app.use(express.json({limit:"20kb"}));
+const mobileOrigins=new Set(["http://localhost","https://localhost","capacitor://localhost",...(process.env.CLIENT_ORIGINS??"").split(",").map(x=>x.trim()).filter(Boolean)]);
 app.use((req,res,next)=>{
-  if(["POST","PUT","PATCH","DELETE"].includes(req.method)){
-    const origin=req.headers.origin;
-    if(origin&&new URL(origin).host!==req.headers.host){res.status(403).json({error:"跨站请求已拒绝"});return;}
+  const origin=req.headers.origin;
+  if(origin&&mobileOrigins.has(origin)){
+    res.setHeader("Access-Control-Allow-Origin",origin);
+    res.setHeader("Vary","Origin");
+    res.setHeader("Access-Control-Allow-Headers","Content-Type, Authorization, X-Client-Platform");
+    res.setHeader("Access-Control-Allow-Methods","GET, POST, PATCH, PUT, DELETE, OPTIONS");
   }
+  if(req.method==="OPTIONS")return res.sendStatus(origin&&mobileOrigins.has(origin)?204:403);
+  if(["POST","PUT","PATCH","DELETE"].includes(req.method)&&origin&&!mobileOrigins.has(origin)&&new URL(origin).host!==req.headers.host)return res.status(403).json({error:"跨站请求已拒绝"});
   next();
 });
 const fail=(res:express.Response,message:string,status=400)=>res.status(status).json({error:message});
@@ -77,11 +83,11 @@ app.post("/api/register",(req,res)=>{
   const username=String(req.body.username??"").trim().toLowerCase(),name=String(req.body.name??"").trim(),password=String(req.body.password??"");
   if(!/^[a-z0-9_]{3,24}$/.test(username)||name.length<1||name.length>30||password.length<8||password.length>128)return fail(res,"用户名需 3–24 位字母/数字/下划线，昵称 1–30 字，密码至少 8 位");
   if(db.prepare("SELECT 1 FROM users WHERE username=?").get(username))return fail(res,"用户名已被使用",409);
-  const id=register(username,name,password);createSession(req,res,id);res.status(201).json({user:{id,username,name}});
+  const id=register(username,name,password),token=createSession(req,res,id);res.status(201).json({user:{id,username,name},...(["android","wechat"].includes(String(req.headers["x-client-platform"]))?{accessToken:token}:{})});
 });
 app.post("/api/login",(req,res)=>{
   const id=verify(String(req.body.username??""),String(req.body.password??""));if(!id)return fail(res,"用户名或密码不正确",401);
-  createSession(req,res,id);const user=getUser(id)!;res.json({user:{id:user.id,username:user.username,name:user.display_name}});
+  const token=createSession(req,res,id),user=getUser(id)!;res.json({user:{id:user.id,username:user.username,name:user.display_name},...(["android","wechat"].includes(String(req.headers["x-client-platform"]))?{accessToken:token}:{})});
 });
 app.post("/api/logout",(req,res)=>{clearSession(req,res);res.json({ok:true});});
 app.get("/api/rooms",(req,res)=>{

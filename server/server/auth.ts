@@ -5,7 +5,7 @@ import { db, getUser, now, uid } from "./db";
 const hash=(token:string)=>crypto.createHash("sha256").update(token).digest("hex");
 const cookie=(req:Request,name:string)=>{const raw=req.headers.cookie??"";return raw.split(";").map(x=>x.trim()).find(x=>x.startsWith(`${name}=`))?.slice(name.length+1)??"";};
 export function currentUser(req:Request){
-  const token=cookie(req,"weekend_session");if(!token)return null;
+  const authorization=req.headers.authorization??"";const token=authorization.startsWith("Bearer ")?authorization.slice(7):cookie(req,"weekend_session");if(!token)return null;
   const row=db.prepare("SELECT user_id FROM sessions WHERE token_hash=? AND expires_at>?").get(hash(token),now()) as {user_id:string}|undefined;
   return row?getUser(row.user_id)??null:null;
 }
@@ -15,9 +15,10 @@ export function createSession(req:Request,res:Response,userId:string){
   db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)").run(hash(token),userId,expiry);
   const secure=req.secure||req.headers["x-forwarded-proto"]==="https";
   res.setHeader("Set-Cookie",`weekend_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${30*86400}${secure?"; Secure":""}`);
+  return token;
 }
 export function clearSession(req:Request,res:Response){
-  const token=cookie(req,"weekend_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
+  const authorization=req.headers.authorization??"";const token=authorization.startsWith("Bearer ")?authorization.slice(7):cookie(req,"weekend_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
   res.setHeader("Set-Cookie","weekend_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");
 }
 export function register(username:string,displayName:string,password:string){
