@@ -6,3 +6,9 @@
 @media(max-width:850px){.auth-shell{grid-template-columns:1fr;gap:30px;max-width:600px;padding:45px 25px}.auth-shell .welcome-card .brand-mark{margin-bottom:18px}.auth-shell .welcome-card h1{font-size:44px}.auth-shell .welcome-copy{font-size:13px}.auth-shell .welcome-tags{margin-top:17px}}
 @media(max-width:760px){.create-room-modal{max-height:94vh;padding:23px}.create-footer{flex-direction:column;align-items:stretch}.create-footer span{max-width:none}.create-footer .button{width:100%}.plan-overview{padding:15px 18px 0}.plan-assumptions{padding:12px 18px}}
 @media(max-width:480px){.create-two,.create-row{grid-template-columns:1fr}.budget-grid{grid-template-columns:repeat(2,1fr)}.poll-options{grid-template-columns:1fr}.topbar-caption{display:none}.logout-button{font-size:11px}.auth-shell .welcome-card h1{font-size:40px}}
+
+body.capacitor-android .topbar{height:calc(74px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
+body.capacitor-android .welcome-shell{padding-top:calc(40px + env(safe-area-inset-top));padding-bottom:env(safe-area-inset-bottom)}
+body.capacitor-android .room-page,body.capacitor-android .dashboard{padding-bottom:env(safe-area-inset-bottom)}
+body.capacitor-android .chat-composer{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+body.capacitor-android.keyboard-open .chat-column.show-mobile{height:calc(100dvh - 210px);min-height:250px}

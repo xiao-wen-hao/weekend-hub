@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Clipboard, Clock3, Coffee, Heart, LockKeyhole, MessageCircle, Plus, Send, Sparkles, Users, UtensilsCrossed, WandSparkles, X } from "lucide-react";
 import { FOODS, PLAYS, START_WINDOWS, formatTime, mainEnd } from "../shared/domain";
 import CircleHub from "./CircleHub";
+import {apiRequest,apiBase,isNativeClient,setApiBase} from "./api";
+import {App as CapacitorApp} from "@capacitor/app";
+import {StatusBar,Style} from "@capacitor/status-bar";
+import {Keyboard} from "@capacitor/keyboard";
 import type { Brief, Plan, Preference, Question } from "../shared/domain";
 
 type User={id:string;username:string;name:string};
@@ -16,7 +20,7 @@ type RoomData={joined:boolean;room:{id:string;title:string;date:string;phase?:st
 const TODAY=()=>{const d=new Date();d.setDate(d.getDate()+((6-d.getDay()+7)%7||7));return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;};
 const dateText=(value:string)=>{const d=new Date(`${value}T12:00:00`);return Number.isNaN(d.getTime())?value:new Intl.DateTimeFormat("zh-CN",{month:"long",day:"numeric",weekday:"long"}).format(d);};
 const shortName=(value:string)=>value.length>12?`${value.slice(0,12)}…`:value;
-async function api<T>(url:string,method="GET",body?:unknown):Promise<T>{const response=await fetch(url,{method,credentials:"same-origin",headers:body?{"Content-Type":"application/json"}:undefined,body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"});const data=await response.json() as T & {error?:string};if(!response.ok)throw new Error(data.error??"请求失败");return data;}
+async function api<T>(url:string,method="GET",body?:unknown):Promise<T>{return apiRequest<T>(url.replace(/^\/api/,""),method,body);}
 
 export default function App(){
   const [user,setUser]=useState<User|null|undefined>(undefined);
@@ -40,6 +44,23 @@ export default function App(){
   useEffect(()=>{const listener=()=>{setRoomId(new URLSearchParams(location.search).get("room"));setRoom(null);};window.addEventListener("popstate",listener);return()=>window.removeEventListener("popstate",listener);},[]);
   useEffect(()=>{if(!roomId||!user)return;const timer=setInterval(()=>void refresh(roomId),3500);return()=>clearInterval(timer);},[roomId,user,refresh]);
   useEffect(()=>{chatEnd.current?.scrollIntoView({block:"end",behavior:"smooth"});},[room?.messages?.length,room?.question?.id]);
+  useEffect(()=>{
+    if(!isNativeClient)return;
+    let alive=true;let back:{remove:()=>Promise<void>}|undefined;
+    void CapacitorApp.addListener("backButton",()=>{if(document.body.classList.contains("keyboard-open")||document.activeElement instanceof HTMLInputElement||document.activeElement instanceof HTMLTextAreaElement){(document.activeElement as HTMLElement|null)?.blur();void Keyboard.hide();}else if(roomId)navigate(null);else void CapacitorApp.exitApp();}).then(handle=>{if(alive)back=handle;else void handle.remove();});
+    void StatusBar.setStyle({style:Style.Light}).catch(()=>{});
+    return()=>{alive=false;void back?.remove();};
+  },[roomId]);
+  useEffect(()=>{
+    if(!isNativeClient)return;
+    let alive=true;let show:{remove:()=>Promise<void>}|undefined;let hide:{remove:()=>Promise<void>}|undefined;
+    void Keyboard.addListener("keyboardDidShow",()=>document.body.classList.add("keyboard-open")).then(h=>{if(alive)show=h;else void h.remove();});
+    void Keyboard.addListener("keyboardDidHide",()=>document.body.classList.remove("keyboard-open")).then(h=>{if(alive)hide=h;else void h.remove();});
+    const online=()=>{setError("");if(user)void refresh(roomId);};
+    const offline=()=>setError("网络已断开，请检查连接后重试");
+    window.addEventListener("online",online);window.addEventListener("offline",offline);
+    return()=>{alive=false;void show?.remove();void hide?.remove();window.removeEventListener("online",online);window.removeEventListener("offline",offline);};
+  },[roomId,user,refresh]);
   const navigate=(id:string|null)=>{history.pushState({},"",id?`/?room=${encodeURIComponent(id)}`:"/");setRoomId(id);setRoom(null);setTab("board");};
   const mutate=async(action:string,body:unknown)=>{if(!roomId)return;setBusy(true);try{const result=await api<RoomData>(`/api/rooms/${roomId}/${action}`,"POST",body);setRoom(result);setError("");if(result.needsText){setTab("chat");setTimeout(()=>composer.current?.focus(),100);}}catch(e){setError(e instanceof Error?e.message:"操作失败");}finally{setBusy(false);}};
   const send=async()=>{const text=draft.trim();if(!text)return;setDraft("");await mutate("message",{text});};
@@ -65,9 +86,9 @@ export default function App(){
 function phaseText(phase:string){return ({draft:"开局草案",discussing:"讨论中",blocked:"等待协调",final:"已定案"} as Record<string,string>)[phase]??"讨论中";}
 
 function AuthView({onAuth}:{onAuth:(user:User)=>void}){
-  const [mode,setMode]=useState<"login"|"register">("login");const [username,setUsername]=useState("");const [name,setName]=useState("");const [password,setPassword]=useState("");const [error,setError]=useState("");const [busy,setBusy]=useState(false);
-  const submit=async()=>{setBusy(true);try{const result=await api<{user:User}>(`/api/${mode}`,"POST",{username,name,password});onAuth(result.user);}catch(e){setError(e instanceof Error?e.message:"登录失败");}finally{setBusy(false);}};
-  return <main className="welcome-shell auth-shell"><div className="welcome-card"><div className="brand-mark">局</div><p className="eyebrow">WEEKEND, TOGETHER</p><h1>周末局，<br/><em>好朋友，好商量。</em></h1><p className="welcome-copy">几点见？吃什么？玩几场？结束后还续不续？先有一版草案，再让每个人都能把真实想法说出来。</p><div className="welcome-tags"><span>先有草案</span><span>私下协调</span><span>逐人确认</span></div></div><div className="auth-card"><div className="auth-card-head"><Sparkles size={23}/><span>{mode==="login"?"欢迎回来":"加入周末局"}</span></div><h2>{mode==="login"?"登录账号":"创建账号"}</h2><p>用自己的账号加入讨论间，私人偏好只在你的会话中显示。</p><form onSubmit={e=>{e.preventDefault();void submit();}}><label>用户名<input value={username} onChange={e=>setUsername(e.target.value)} placeholder="字母、数字或下划线" autoComplete="username"/></label>{mode==="register"&&<label>显示昵称<input value={name} onChange={e=>setName(e.target.value)} placeholder="朋友们怎么称呼你？" maxLength={30}/></label>}<label>密码<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="至少 8 位" autoComplete={mode==="login"?"current-password":"new-password"}/></label>{error&&<p className="form-error">{error}</p>}<button className="button button-dark auth-submit" disabled={busy}>{mode==="login"?"登录并继续":"注册并继续"} <ArrowRight size={17}/></button></form><button className="auth-switch" onClick={()=>{setMode(mode==="login"?"register":"login");setError("");}}>{mode==="login"?"还没有账号？创建一个":"已有账号？返回登录"}</button></div></main>;
+  const [mode,setMode]=useState<"login"|"register">("login");const [username,setUsername]=useState("");const [name,setName]=useState("");const [password,setPassword]=useState("");const [error,setError]=useState("");const [busy,setBusy]=useState(false);const [serverUrl,setServerUrl]=useState(apiBase());
+  const submit=async()=>{setBusy(true);try{if(isNativeClient)setApiBase(serverUrl.trim());const result=await api<{user:User}>(`/api/${mode}`,"POST",{username,name,password});onAuth(result.user);}catch(e){setError(e instanceof Error?e.message:"登录失败");}finally{setBusy(false);}};
+  return <main className="welcome-shell auth-shell"><div className="welcome-card"><div className="brand-mark">局</div><p className="eyebrow">WEEKEND, TOGETHER</p><h1>周末局，<br/><em>好朋友，好商量。</em></h1><p className="welcome-copy">几点见？吃什么？玩几场？结束后还续不续？先有一版草案，再让每个人都能把真实想法说出来。</p><div className="welcome-tags"><span>先有草案</span><span>私下协调</span><span>逐人确认</span></div></div><div className="auth-card"><div className="auth-card-head"><Sparkles size={23}/><span>{mode==="login"?"欢迎回来":"加入周末局"}</span></div><h2>{mode==="login"?"登录账号":"创建账号"}</h2><p>用自己的账号加入讨论间，私人偏好只在你的会话中显示。</p><form onSubmit={e=>{e.preventDefault();void submit();}}>{isNativeClient&&<label>后端地址<input value={serverUrl} onChange={e=>setServerUrl(e.target.value)} placeholder="例如 https://你的域名" inputMode="url"/></label>}<label>用户名<input value={username} onChange={e=>setUsername(e.target.value)} placeholder="字母、数字或下划线" autoComplete="username"/></label>{mode==="register"&&<label>显示昵称<input value={name} onChange={e=>setName(e.target.value)} placeholder="朋友们怎么称呼你？" maxLength={30}/></label>}<label>密码<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="至少 8 位" autoComplete={mode==="login"?"current-password":"new-password"}/></label>{error&&<p className="form-error">{error}</p>}<button className="button button-dark auth-submit" disabled={busy}>{mode==="login"?"登录并继续":"注册并继续"} <ArrowRight size={17}/></button></form><button className="auth-switch" onClick={()=>{setMode(mode==="login"?"register":"login");setError("");}}>{mode==="login"?"还没有账号？创建一个":"已有账号？返回登录"}</button></div></main>;
 }
 
 function CreateRoom({onClose,onCreate,busy}:{onClose:()=>void;onCreate:(brief:Brief)=>void;busy:boolean}){

@@ -1,6 +1,7 @@
 import {useCallback,useEffect,useState} from "react";
 import {FOODS,PLAYS} from "../shared/domain";
 import "./circles.css";
+import {apiRequest} from "./api";
 
 type Circle={id:string;name:string;role:"owner"|"admin"|"member"};
 type Member={id:string;name:string;role:string};
@@ -10,11 +11,7 @@ type Preview={category:string|null;windowId:string|null;evidence:{category:strin
 type Notice={id:string;kind:string;payload:{circleId?:string;candidateId?:string;roomId?:string;category?:string;version?:number;changes?:string[]};status:string;createdAt:string};
 const times=[{id:"morning",name:"上午"},{id:"noon",name:"中午"},{id:"afternoon",name:"下午"},{id:"evening",name:"晚上"}];
 const timeName=(id:string)=>times.find(t=>t.id===id)?.name??id;
-async function call<T>(path:string,method="GET",body?:unknown):Promise<T>{
-  const response=await fetch(`/api${path}`,{method,credentials:"same-origin",cache:"no-store",headers:body===undefined?undefined:{"Content-Type":"application/json"},body:body===undefined?undefined:JSON.stringify(body)});
-  const raw=await response.text();let value:any;try{value=JSON.parse(raw);}catch{throw Error("服务暂时不可用，请稍后重试");}
-  if(!response.ok)throw Error(value.error??`请求失败 (${response.status})`);return value as T;
-}
+async function call<T>(path:string,method="GET",body?:unknown):Promise<T>{return apiRequest<T>(path,method,body);}
 
 export default function CircleHub({onOpenRoom,userId}:{onOpenRoom:(id:string)=>void;userId:string}){
   const [circles,setCircles]=useState<Circle[]>([]),[selected,setSelected]=useState<string|null>(null);

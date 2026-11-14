@@ -13,6 +13,7 @@
 | T07 投票 | E01 | poll/API/UI | 冻结成员、弃权、锁定、幂等；并发 API 测试 | 待做 |
 | T08 版本与报名 | F01 | plan/RSVP/API/UI | 快照、同版接受、三态报名和变更保留；状态机测试 | 待做 |
 | T09 公告与通知 | G01 | board/outbox/API/UI | 候选与开房事务通知、用户隔离的站内待办已实现；方案差异公告与成员待办已实现并联调；通知数据库重启测试通过 | PARTIAL |
+| T10a Capacitor Android | P01 | `server/android/` | Studio 工程、APK 构建、模拟器登录与重启通过；真机和完整流程待测 | PARTIAL |
 | T10 小程序 | P01 | `miniapp/` | Taro 页面、登录和完整导航；开发工具与真机测试 | 待做 |
 | T11 部署验收 | Q01 | Docker/docs/tests | 十场景、备份恢复、Docker 实测；测试报告 | 待做 |
 

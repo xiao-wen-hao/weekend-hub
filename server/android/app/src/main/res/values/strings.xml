@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">周末局</string>
+    <string name="title_activity_main">周末局</string>
+    <string name="package_name">com.zhoumoju.weekendhub</string>
+    <string name="custom_url_scheme">com.zhoumoju.weekendhub</string>
+</resources>

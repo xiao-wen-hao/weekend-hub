@@ -80,3 +80,8 @@
 - 10 项单元测试 PASS，含方案字段差异计算。
 - 三账号真实 API 完整讨论流程 PASS：私聊隔离、投票、分项报名、同版确认；方案更新与最终定案均产生用户待办。
 - Web typecheck 与 Vite 生产构建 PASS。
+
+## 2026-11-14 Capacitor Android
+- `npm run sync:android` 与 `gradlew.bat assembleDebug` PASS。
+- Medium_Phone 模拟器 APK 安装、真实后端登录、应用重启后登录态恢复 PASS。
+- 真机和 Android 完整多人流程尚未执行。
