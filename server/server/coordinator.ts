@@ -8,6 +8,11 @@ import { enqueueNotification } from "./notification";
 type PollOption={id:string;label:string;value:string|number};
 type PollRow={id:string;room_id:string;proposal_id:string|null;facet:string;question:string;options_json:string;status:string;created_at:string};
 const timers=new Map<string,NodeJS.Timeout>();
+export type CoordinationSnapshot={revision:number;epoch:number;proposalId:string|null};
+export const pendingSnapshot=(roomId:string):CoordinationSnapshot|null=>{
+  const room=getRoom(roomId);
+  return room&&room.phase!=="final"&&room.coordination_pending===1?{revision:room.revision,epoch:room.coordination_epoch,proposalId:room.current_proposal_id}:null;
+};
 const planSignature=(plan:Plan)=>JSON.stringify({area:plan.area,segments:plan.segments.map(s=>({kind:s.kind,category:s.category,start:s.start,end:s.end,budgetCap:s.budgetCap}))});
 
 export function getMembers(roomId:string):MemberPreference[]{
@@ -24,27 +29,35 @@ export function activePoll(roomId:string):PollRow|null{
 export function emitEvent(roomId:string,type:string,text:string){db.prepare("INSERT INTO room_events(id,room_id,event_type,public_text,created_at) VALUES(?,?,?,?,?)").run(uid(),roomId,type,text,now());}
 export function scheduleRoom(roomId:string,delay=450){
   const old=timers.get(roomId);if(old)clearTimeout(old);
-  timers.set(roomId,setTimeout(()=>{timers.delete(roomId);try{coordinateRoom(roomId);}catch(error){console.error("Coordination failed",error);}},delay));
+  const snapshot=pendingSnapshot(roomId);if(!snapshot){timers.delete(roomId);return;}
+  const timer=setTimeout(()=>{if(timers.get(roomId)!==timer)return;timers.delete(roomId);try{coordinateRoom(roomId,snapshot);}catch(error){console.error("Coordination failed",error);}},delay);
+  timers.set(roomId,timer);
 }
-export function coordinateRoom(roomId:string){
-  const room=getRoom(roomId);if(!room||activePoll(roomId))return;
+export function recoverPendingCoordination(){
+  const rows=db.prepare("SELECT id FROM rooms WHERE coordination_pending=1 AND phase!='final'").all() as {id:string}[];
+  for(const row of rows)scheduleRoom(row.id,0);
+}
+export function coordinateRoom(roomId:string,expected:CoordinationSnapshot|null=pendingSnapshot(roomId)){
+  const room=getRoom(roomId);
+  if(!room||!expected||room.phase==="final"||room.coordination_pending!==1||room.revision!==expected.revision||room.coordination_epoch!==expected.epoch||room.current_proposal_id!==expected.proposalId||activePoll(roomId))return;
   const brief=JSON.parse(room.brief_json) as Brief,locks=JSON.parse(room.locks_json) as PlanLocks;
   const members=getMembers(roomId);
   const candidate=negotiatePlan(brief,members,locks);
   const current=currentPlan(roomId);
+  const where="id=? AND revision=? AND coordination_epoch=? AND current_proposal_id IS ? AND coordination_pending=1 AND phase!='final'";
+  const args=[roomId,expected.revision,expected.epoch,expected.proposalId] as const;
   if(!candidate){
-    db.prepare("UPDATE rooms SET phase='blocked',updated_at=? WHERE id=? AND revision=?").run(now(),roomId,room.revision);
-    if(room.phase!=="blocked")emitEvent(roomId,"blocked","目前还没有满足已知时间条件的全员安排，主持人正在私下寻找可调整的部分。");
+    db.transaction(()=>{const changed=db.prepare(`UPDATE rooms SET phase='blocked',coordination_pending=0,updated_at=? WHERE ${where}`).run(now(),...args);if(changed.changes&&room.phase!=="blocked")emitEvent(roomId,"blocked","目前还没有满足已知时间条件的全员安排，主持人正在私下寻找可调整的部分。");})();
     return;
   }
   if(current&&planSignature(current.plan)===planSignature(candidate)){
-    if(room.phase==="blocked")db.prepare("UPDATE rooms SET phase='discussing',updated_at=? WHERE id=?").run(now(),roomId);
-    maybeAutoPoll(roomId,brief,members,locks,candidate);
+    const changed=db.prepare(`UPDATE rooms SET phase=CASE WHEN phase='blocked' THEN 'discussing' ELSE phase END,coordination_pending=0,updated_at=? WHERE ${where}`).run(now(),...args);
+    if(changed.changes)maybeAutoPoll(roomId,brief,members,locks,candidate);
     return;
   }
   const version=(current?.version??0)+1,proposalId=uid(),stamp=now();
   const updated=db.transaction(()=>{
-    const result=db.prepare("UPDATE rooms SET current_proposal_id=?,phase='discussing',updated_at=? WHERE id=? AND revision=?").run(proposalId,stamp,roomId,room.revision);
+    const result=db.prepare(`UPDATE rooms SET current_proposal_id=?,phase='discussing',coordination_pending=0,updated_at=? WHERE ${where}`).run(proposalId,stamp,...args);
     if(!result.changes)return false;
     db.prepare("INSERT INTO proposals(id,room_id,version,plan_json,kind,created_at) VALUES(?,?,?,?,?,?)").run(proposalId,roomId,version,JSON.stringify(candidate),"candidate",stamp);
     const changes=current?describePlanChanges(current.plan,candidate):["初始草案"];
@@ -53,7 +66,6 @@ export function coordinateRoom(roomId:string){
     return true;
   })();
   if(updated)maybeAutoPoll(roomId,brief,members,locks,candidate);
-  else scheduleRoom(roomId,100);
 }
 
 function maybeAutoPoll(roomId:string,brief:Brief,members:MemberPreference[],locks:PlanLocks,plan:Plan){
@@ -84,7 +96,7 @@ export function pollOptions(facet:string,plan:Plan,brief:Brief,members:MemberPre
 }
 
 export function createPoll(roomId:string,facet:string,options:PollOption[],question:string,source:"auto"|"manual"){
-  if(activePoll(roomId))return null;
+  const room=getRoom(roomId);if(!room||room.phase==="final"||room.coordination_pending||activePoll(roomId))return null;
   const pollId=uid(),proposal=currentPlan(roomId);
   db.prepare("INSERT INTO polls(id,room_id,proposal_id,facet,question,options_json,status,created_at) VALUES(?,?,?,?,?,?,'open',?)").run(pollId,roomId,proposal?.id??null,facet,question,JSON.stringify(options),now());
   emitEvent(roomId,"poll",source==="auto"?"大家的想法出现分歧，主持人发起了一轮匿名投票。":"发起人发起了一轮匿名投票。");
@@ -114,15 +126,17 @@ export function closePoll(roomId:string,pollId:string){
   const max=votes[0].n;
   const winnerId=votes.filter(v=>v.n===max).sort((a,b)=>Number(b.option_id===preferred)-Number(a.option_id===preferred))[0].option_id;
   const winner=options.find(o=>o.id===winnerId)!;
-  const room=getRoom(roomId)!;
+  const room=getRoom(roomId)!;if(room.phase==="final"||room.coordination_pending||row.proposal_id!==room.current_proposal_id)return false;
   const locks=JSON.parse(room.locks_json) as Record<string,unknown>;
   const key=row.facet==="time"?"start":row.facet;
   locks[key]=winner.value;
-  db.transaction(()=>{
+  const closed=db.transaction(()=>{
+    const changed=db.prepare("UPDATE rooms SET locks_json=?,revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,phase='discussing',updated_at=? WHERE id=? AND phase!='final' AND coordination_pending=0 AND current_proposal_id IS ?").run(JSON.stringify(locks),now(),roomId,row.proposal_id);
+    if(!changed.changes)return false;
     db.prepare("UPDATE polls SET status='closed',closed_at=? WHERE id=?").run(now(),pollId);
-    db.prepare("UPDATE rooms SET locks_json=?,revision=revision+1,phase='discussing',updated_at=? WHERE id=?").run(JSON.stringify(locks),now(),roomId);
     emitEvent(roomId,"poll_result",`匿名投票结束：「${winner.label}」获得最多支持，主持人正在检查新安排。`);
+    return true;
   })();
-  scheduleRoom(roomId,50);
-  return true;
+  if(closed)scheduleRoom(roomId,50);
+  return closed;
 }

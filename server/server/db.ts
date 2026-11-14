@@ -74,7 +74,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_dedupe ON notification_outbox(dedup
 `;
 if(version<6){db.transaction(()=>{db.exec(migration6);db.pragma("user_version = 6");})();}
 
-export type RoomRow={id:string;title:string;date:string;brief_json:string;phase:string;current_proposal_id:string|null;revision:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
+// A durable barrier between a changed input and a proposal that members may confirm.
+const migration7=`
+ALTER TABLE rooms ADD COLUMN coordination_pending INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE rooms ADD COLUMN coordination_epoch INTEGER NOT NULL DEFAULT 0;
+`;
+if(version<7){db.transaction(()=>{db.exec(migration7);db.pragma("user_version = 7");})();}
+
+export type RoomRow={id:string;title:string;date:string;brief_json:string;phase:string;current_proposal_id:string|null;revision:number;coordination_pending:number;coordination_epoch:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();
 export const uid=()=>crypto.randomUUID();

@@ -10,8 +10,8 @@ PASS 仅表示已实现且有测试证据；PARTIAL 为仅部分实现；FAIL �
 | B02 | 私下试探状态与正式开房 | `community.ts` | PARTIAL | 三账号开房、失效授权、重复开房、48 小时过期已通过；通知待做 |
 | C01 | 直接发起与开局字段状态 | `server/index.ts`、`shared/planner.ts` | PARTIAL | 草案假设、未知字段不被确认 |
 | D01 | 私聊抽取、证据、软硬约束与动态追问 | `language.ts`、`planner.ts` | PARTIAL | 字段 F1、误抽取、无解、降级 |
-| E01 | 投票名单、修改、弃权、锁定、硬约束复核 | `coordinator.ts`、`index.ts` | PARTIAL | 重复票、弃权、过期票 |
-| F01 | 不可变版本、同版接受、分项报名 | `db.ts`、`index.ts` | PARTIAL | 新旧版冲突、报名不等于接受 |
+| E01 | 投票名单、修改、弃权、锁定、硬约束复核 | `coordinator.ts`、`index.ts` | PARTIAL | 改变方案的投票及更新通知已通过 API；冻结名单、弃权、过期票待测 |
+| F01 | 不可变版本、同版接受、分项报名 | `db.ts`、`coordinator.ts`、`index.ts` | PARTIAL | 待协调确认拒绝、旧任务快照/旧 proposal、定案重启和四人同版报名已通过；其他状态边界待测 |
 | G01 | 公告、通知、变更、历史 | `coordinator.ts`、`notification.ts`、`src/CircleHub.tsx` | PARTIAL | 候选与开房待办、用户隔离已通过；通知重启与方案字段差异、成员待办已通过；更多变更场景待测 |
 | P01 | 微信小程序移动端 | `miniprogram/` Taro 客户端 | PARTIAL | TypeScript 和微信编译通过；真实后端 Bearer 登录及房间读取通过；开发者工具与真机待验 |
 | Q01 | 十场景端到端、Docker 实测 | `tests/`、部署文档待补 | FAIL | 全场景执行并记录结果 |
