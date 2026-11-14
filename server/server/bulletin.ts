@@ -3,7 +3,7 @@ import {formatTime} from '../shared/domain';
 import type {Plan} from '../shared/domain';
 
 export type BulletinContent={topic:string;consensus:string[];provisional:string[];disagreements:string[];pending:string[];recentChanges:string[];shared:{id:string;author:string;text:string}[]};
-type Share={id:string;public_text:string;name:string};
+type Share={id:string;public_text:string;name:string;kind:string|null;excerpt:string|null};
 
 // Only public artifacts enter this projection. Never query messages or preferences here.
 export function buildBulletin(roomId:string):{content:BulletinContent;sources:string[]}|null{
@@ -14,12 +14,12 @@ export function buildBulletin(roomId:string):{content:BulletinContent;sources:st
   const accepted=confirmations.find(c=>c.decision==='accept')?.count??0,rejected=confirmations.find(c=>c.decision==='reject')?.count??0;
   const members=(db.prepare('SELECT COUNT(*) AS count FROM members WHERE room_id=?').get(roomId) as {count:number}).count;
   const poll=db.prepare("SELECT id,question FROM polls WHERE room_id=? AND status='open' ORDER BY created_at DESC LIMIT 1").get(roomId) as {id:string;question:string}|undefined;
-  const shares=db.prepare('SELECT s.id,s.public_text,u.display_name AS name FROM room_public_shares s JOIN users u ON u.id=s.author_id WHERE s.room_id=? ORDER BY s.created_at,s.id LIMIT 50').all(roomId) as Share[];
+  const shares=db.prepare('SELECT s.id,s.public_text,u.display_name AS name,a.kind,a.excerpt FROM room_public_shares s JOIN users u ON u.id=s.author_id LEFT JOIN room_share_annotations a ON a.share_id=s.id WHERE s.room_id=? ORDER BY s.created_at,s.id LIMIT 50').all(roomId) as Share[];
   const events=db.prepare('SELECT id,public_text AS text FROM room_events WHERE room_id=? ORDER BY created_at DESC,id DESC LIMIT 4').all(roomId) as {id:string;text:string}[];
   const planLines=proposal?[`${proposal.plan.date} · ${proposal.plan.area||'区域待商量'}`,...proposal.plan.segments.map(s=>`${formatTime(s.start)} ${s.category} · ${s.budgetCap===null?'预算待商量':`人均不超过 ¥${s.budgetCap}`}`)]:[];
   const missing=proposal?[...(!proposal.plan.area?['大致区域']:[]),...proposal.plan.segments.filter(s=>s.budgetCap===null).map(s=>`${s.label}预算`)]:['活动、时间和安排'];
-  const content:BulletinContent={topic:room.title,consensus:room.phase==='final'?planLines:[],provisional:room.phase==='final'?[]:planLines,disagreements:[...(poll?[poll.question]:[]),...(room.phase==='blocked'?['现有条件尚无共同可行的安排']:[]),...(rejected?['有成员对当前方案提出异议，具体理由仍属私人信息']:[])],pending:room.phase==='final'?[]:[...missing,...(proposal&&!missing.length?[`等待 ${members-accepted} 位成员确认当前方案`]:[])],recentChanges:events.map(e=>e.text),shared:shares.map(s=>({id:s.id,author:s.name,text:s.public_text}))};
-  return {content,sources:[...(proposal?[`proposal:${proposal.id}`,`accept:${accepted}`,`reject:${rejected}`]:[]),...(poll?[`poll:${poll.id}`]:[]),...shares.map(s=>`share:${s.id}`),...events.map(e=>`event:${e.id}`),`phase:${room.phase}`]};
+  const content:BulletinContent={topic:room.title,consensus:room.phase==='final'?planLines:[],provisional:room.phase==='final'?[]:[...planLines,...shares.filter(s=>s.kind==='provisional').map(s=>`${s.name}：${s.excerpt}`)],disagreements:[...(poll?[poll.question]:[]),...(room.phase==='blocked'?['现有条件尚无共同可行的安排']:[]),...(rejected?['有成员对当前方案提出异议，具体理由仍属私人信息']:[]),...shares.filter(s=>s.kind==='disagreement').map(s=>`${s.name}：${s.excerpt}`)],pending:room.phase==='final'?[]:[...missing,...(proposal&&!missing.length?[`等待 ${members-accepted} 位成员确认当前方案`]:[])],recentChanges:events.map(e=>e.text),shared:shares.map(s=>({id:s.id,author:s.name,text:s.public_text}))};
+  return {content,sources:[...(proposal?[`proposal:${proposal.id}`,`accept:${accepted}`,`reject:${rejected}`]:[]),...(poll?[`poll:${poll.id}`]:[]),...shares.map(s=>`share:${s.id}${s.kind?`:annotation:${s.kind}`:''}`),...events.map(e=>`event:${e.id}`),`phase:${room.phase}`]};
 }
 
 export function refreshBulletin(roomId:string){

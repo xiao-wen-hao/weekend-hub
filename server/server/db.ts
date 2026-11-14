@@ -91,6 +91,17 @@ CREATE INDEX idx_bulletins_room ON room_bulletins(room_id,version);
 `;
 if(version<8){db.transaction(()=>{db.exec(migration8);db.pragma("user_version = 8");})();}
 
+const migration9=`
+ALTER TABLE candidates ADD COLUMN match_reason_json TEXT;
+`;
+if(version<9){db.transaction(()=>{db.exec(migration9);db.pragma("user_version = 9");})();}
+
+const migration10=`
+CREATE TABLE room_share_annotations(share_id TEXT PRIMARY KEY REFERENCES room_public_shares(id),room_id TEXT NOT NULL REFERENCES rooms(id),kind TEXT NOT NULL CHECK(kind IN ('provisional','disagreement')),excerpt TEXT NOT NULL,source TEXT NOT NULL CHECK(source IN ('model','fallback')),created_at TEXT NOT NULL);
+CREATE INDEX idx_share_annotations_room ON room_share_annotations(room_id);
+`;
+if(version<10){db.transaction(()=>{db.exec(migration10);db.pragma("user_version = 10");})();}
+
 export type RoomRow={id:string;title:string;date:string;mode:'blank'|'template';brief_json:string;phase:string;current_proposal_id:string|null;revision:number;coordination_pending:number;coordination_epoch:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();

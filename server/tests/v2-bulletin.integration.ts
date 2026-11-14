@@ -29,8 +29,17 @@ try{
   assert.equal((await call(host,`/rooms/${id}/share`,{sourceMessageId:sourceId,publicText:'周末想爬山',explicitApproval:false})).status,400);
   assert.equal((await call(guest,`/rooms/${id}/share`,{sourceMessageId:sourceId,publicText:'偷发别人的话',explicitApproval:true})).status,403);
   const shared=await call<any>(host,`/rooms/${id}/share`,{sourceMessageId:sourceId,publicText:'周末想爬山',explicitApproval:true});assert.equal(shared.status,200);
+  let annotation:any;for(let i=0;i<30;i++){const read=new Database(join(directory,'weekend.db'),{readonly:true});annotation=read.prepare('SELECT a.kind,a.excerpt,a.source FROM room_share_annotations a JOIN room_public_shares s ON s.id=a.share_id WHERE s.room_id=?').get(id);read.close();if(annotation)break;await sleep(50);}
+  assert.equal(annotation?.kind,'provisional');assert.equal(annotation?.excerpt,'周末想爬山');assert.equal(annotation?.source,'fallback');
   const after=(await call<any>(guest,`/rooms/${id}`)).data;assert.equal(after.bulletin.content.shared.length,1);assert.equal(after.bulletin.content.shared[0].text,'周末想爬山');assert.ok(!JSON.stringify(after).includes('秘密标记739'));
+  assert.ok(after.bulletin.content.provisional.some((x:string)=>x.includes('周末想爬山')));
   const history=await call<any>(guest,`/rooms/${id}/bulletins`);assert.equal(history.status,200);assert.ok(history.data.bulletins.length>=2);assert.ok(history.data.bulletins[0].sources.some((x:string)=>x.startsWith('share:')));
-  const raw=new Database(join(directory,'weekend.db'),{readonly:true});assert.equal((raw.prepare('SELECT COUNT(*) AS n FROM room_public_shares WHERE room_id=?').get(id) as {n:number}).n,1);assert.equal((raw.prepare('SELECT COUNT(*) AS n FROM messages WHERE room_id=?').get(id) as {n:number}).n,2);raw.close();
+  const agreed=await call<any>(guest,`/rooms/${id}/share`,{publicText:'我也想去爬山，时间可以再商量',explicitApproval:true});assert.equal(agreed.status,200);
+  let proposal:any=null;for(let i=0;i<30;i++){proposal=(await call<any>(host,`/rooms/${id}`)).data.proposal;if(proposal)break;await sleep(100);}
+  assert.ok(proposal,'two approved public ideas generated a draft');assert.equal(proposal.version,1);
+  const debugDb=new Database(join(directory,'weekend.db'),{readonly:true});const debugRoom=debugDb.prepare('SELECT mode,brief_json AS brief,coordination_pending AS pending FROM rooms WHERE id=?').get(id);debugDb.close();
+  assert.ok(proposal.plan.segments.some((s:any)=>s.category==='徒步'),JSON.stringify({segments:proposal.plan.segments,room:debugRoom}));
+  assert.ok(!JSON.stringify(proposal).includes('秘密标记739'));
+  const raw=new Database(join(directory,'weekend.db'),{readonly:true});assert.equal((raw.prepare('SELECT COUNT(*) AS n FROM room_public_shares WHERE room_id=?').get(id) as {n:number}).n,2);assert.equal((raw.prepare('SELECT COUNT(*) AS n FROM messages WHERE room_id=?').get(id) as {n:number}).n,2);raw.close();
   console.log(JSON.stringify({ok:true,roomId:id,blank:true,privateDefault:true,explicitShare:true,sourceAudit:true,bulletinVersions:history.data.bulletins.length}));
 }finally{if(backend){backend.kill();await new Promise(resolve=>{if(backend!.exitCode!==null)return resolve(null);backend!.once('exit',resolve);setTimeout(()=>resolve(null),2000);});}if(directory.startsWith(tmpdir()+sep))rmSync(directory,{recursive:true,force:true});}

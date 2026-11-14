@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { createServer as createViteServer } from "vite";
 import { db, getRoom, getUser, isMember, now, uid } from "./db";
 import { clearSession, createSession, currentUser, register, verify } from "./auth";
-import { activePoll, closePoll, createPoll, currentPlan, emitEvent, getMembers, pollOptions, recoverPendingCoordination, scheduleRoom, vote } from "./coordinator";
+import { activePoll, closePoll, createPoll, currentPlan, emitEvent, getMembers, pollOptions, recoverPendingCoordination, scheduleRoom, startBlankPlanFromPublicShares, vote } from "./coordinator";
 import { initialPlan, nextQuestion, conflictQuestion, validatePreferencePatch, finalizationMissing } from "../shared/planner";
 import type { Brief, Plan, PlanLocks, Preference, Question } from "../shared/domain";
 import { FOODS, PLAYS, START_WINDOWS } from "../shared/domain";
@@ -15,6 +15,7 @@ import community from "./community";
 import management from "./management";
 import notification,{enqueueNotification} from "./notification";
 import {buildBulletin,currentBulletin,refreshBulletin} from './bulletin';
+import {annotatePublicShare,recoverPublicSummaries} from './public-summary';
 
 const app=express();
 app.set("trust proxy",1);
@@ -135,11 +136,14 @@ app.post('/api/rooms/:id/share',(req,res)=>{
   const publicText=String(req.body.publicText??'').trim(),sourceMessageId=String(req.body.sourceMessageId??'').trim();
   if(req.body.explicitApproval!==true||!publicText||publicText.length>300)return fail(res,'请确认将展示的具体内容，限 300 字');
   if(sourceMessageId&&!db.prepare("SELECT 1 FROM messages WHERE id=? AND room_id=? AND user_id=? AND role='user'").get(sourceMessageId,access.room.id,access.user.id))return fail(res,'只能选择自己的私人原话',403);
+  const shareId=uid();
   db.transaction(()=>{
-    db.prepare('INSERT INTO room_public_shares(id,room_id,author_id,source_message_id,public_text,created_at) VALUES(?,?,?,?,?,?)').run(uid(),access.room.id,access.user.id,sourceMessageId||null,publicText,now());
+    db.prepare('INSERT INTO room_public_shares(id,room_id,author_id,source_message_id,public_text,created_at) VALUES(?,?,?,?,?,?)').run(shareId,access.room.id,access.user.id,sourceMessageId||null,publicText,now());
     emitEvent(access.room.id,'share',`${access.user.display_name}主动公开分享了一条想法。`);
     refreshBulletin(access.room.id);
   })();
+  startBlankPlanFromPublicShares(access.room.id);
+  void annotatePublicShare(shareId);
   res.json(publicRoom(access.room.id,access.user.id));
 });
 app.post("/api/rooms/:id/join",(req,res)=>{
@@ -149,14 +153,14 @@ app.post("/api/rooms/:id/join",(req,res)=>{
     if(room.phase==="final")return fail(res,"这场聚会已定案",409);
     if(activePoll(room.id))return fail(res,"投票进行中，请等投票结束后加入",409);
     const count=(db.prepare("SELECT COUNT(*) AS n FROM members WHERE room_id=?").get(room.id) as {n:number}).n;
-    if(count>=5)return fail(res,"讨论间最多 5 人",409);
+    if(count>=10)return fail(res,"讨论间最多 10 人",409);
     db.transaction(()=>{
       db.prepare("INSERT INTO members(room_id,user_id,joined_at) VALUES(?,?,?)").run(room.id,user.id,now());
       db.prepare("INSERT INTO preferences(room_id,user_id,data_json,updated_at) VALUES(?,?,'{}',?)").run(room.id,user.id,now());
-      db.prepare("UPDATE rooms SET revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,updated_at=? WHERE id=?").run(now(),room.id);
+      db.prepare("UPDATE rooms SET revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=CASE WHEN mode='blank' AND current_proposal_id IS NULL THEN 0 ELSE 1 END,updated_at=? WHERE id=?").run(now(),room.id);
       emitEvent(room.id,"joined","有新朋友加入了讨论间。" );
       refreshBulletin(room.id);
-    })();scheduleRoom(room.id);
+    })();if(getRoom(room.id)?.coordination_pending)scheduleRoom(room.id);
   }
   res.json(publicRoom(room.id,user.id));
 });
@@ -268,4 +272,5 @@ const port=Number(process.env.PORT??3000),prod=process.argv.includes("--prod");
 if(prod){const dist=path.resolve("dist");app.use(express.static(dist));app.get("/{*any}",(_req,res)=>res.sendFile(path.join(dist,"index.html")));}
 else{const vite=await createViteServer({server:{middlewareMode:true},appType:"spa"});app.use(vite.middlewares);}
 db.transaction(()=>{for(const row of db.prepare('SELECT id FROM rooms WHERE NOT EXISTS (SELECT 1 FROM room_bulletins WHERE room_id=rooms.id)').all() as {id:string}[])refreshBulletin(row.id);})();
+recoverPublicSummaries();
 app.listen(port,"0.0.0.0",()=>{recoverPendingCoordination();console.log(`Weekend Host ready at http://localhost:${port}`);});

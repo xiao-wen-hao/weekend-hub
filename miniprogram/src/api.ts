@@ -5,8 +5,8 @@ export type Summary={id:string;title:string;date:string;phase:string;memberCount
 export type Circle={id:string;name:string;joinCode:string;role:string}
 export type Member={id:string;name:string;role:string}
 export type Intent={id:string;rawText:string;category:string|null;windowId:string|null;status:string;matchAllowed:number|boolean;contactAllowed:number|boolean;parsedJson?:string;confirmedAt:string|null}
-export type Preview={category:string|null;windowId:string|null;evidence:{category:string|null;time:string|null};source:'model'|'fallback'}
-export type Candidate={id:string;category:string;windowId:string;status:string;response:string;memberCount:number;yesCount:number;roomId:string|null;expiresAt:string}
+export type Preview={category:string|null;windowId:string|null;area?:string|null;budgetCap?:number|null;evidence:{category:string|null;time:string|null;area?:string|null;budget?:string|null};source:'model'|'fallback'}
+export type Candidate={id:string;category:string;windowId:string;matchReasonJson?:string|null;status:string;response:string;memberCount:number;yesCount:number;roomId:string|null;expiresAt:string}
 export type Notice={id:string;kind:string;status:string;payload:{circleId?:string;candidateId?:string;roomId?:string;category?:string;version?:number;changes?:string[]}}
 export type Segment={id:string;kind:string;category:string;start:number;end:number;budgetCap:number|null;label:string}
 export type Poll={id:string;question:string;options:{id:string;label:string;votes:number}[];myVote:string|null}
@@ -32,6 +32,6 @@ export async function api<T>(path:string,method:'GET'|'POST'|'PATCH'='GET',data?
 }
 export const roomPath=(id:string)=>`/pages/room/index?id=${encodeURIComponent(id)}`
 export const circlePath=(id:string)=>`/pages/circle/index?id=${encodeURIComponent(id)}`
-export const times:Record<string,string>={morning:'上午',noon:'中午',afternoon:'下午',evening:'晚上'}
+export const times:Record<string,string>={morning:'上午',noon:'中午',afternoon:'下午',evening:'晚上',unsure:'时间待商量'}
 export const foods=['火锅','烤肉','川菜','湘菜','日料','粤菜','西餐','简餐']
-export const plays=['桌游','KTV','电影','剧本杀','密室逃脱','保龄球','逛街','散步聊天']
+export const plays=['桌游','KTV','电影','剧本杀','密室逃脱','保龄球','逛街','散步聊天','徒步']

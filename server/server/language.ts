@@ -40,12 +40,12 @@ export function requireEvidence(text:string,patch:Partial<Preference>):Partial<P
 
 export function fallback(text:string):Interpretation {
   const patch:Record<string,string|number>={};
-  const time=text.match(/(\d{1,2})(?:[点时:]\s*(半|30))?/);
-  if(time){let hour=Number(time[1])+(time[2]?0.5:0);if(hour>=9&&hour<=24){if(/之前|前|得走|要走|结束|离开|回家|最晚/.test(text))patch.until=hour;else if(/之后|以后|才有空|开始|能到/.test(text))patch.from=hour;}}
+  const time=text.match(/(?:早上|上午|中午|下午|晚上|夜里)?\s*(\d{1,2})\s*(?:[点时]\s*(半)?|:\s*(30|00))/);
+  if(time){let hour=Number(time[1])+(time[2]||time[3]==="30"?0.5:0);const prefix=text.slice(Math.max(0,time.index!-3),time.index!+time[0].length);if(/下午|晚上|夜里/.test(prefix)&&hour<12)hour+=12;if(hour>=9&&hour<=24){if(/之前|前|得走|要走|结束|离开|回家|最晚/.test(text))patch.until=hour;else if(/之后|以后|才有空|开始|能到/.test(text))patch.from=hour;}}
   const food=FOODS.find(x=>text.includes(x))??(/烧烤/.test(text)?"烤肉":undefined);
   const play=PLAYS.find(x=>text.includes(x))??(/唱歌/.test(text)?"KTV":undefined);
   if(food){if(/不吃|不想吃|不去|不要/.test(text))patch.vetoFood=food;else patch.food=food;}
-  if(play){if(/不玩|不想玩|不去|不要/.test(text))patch.vetoPlay=play;else patch.play=play;}
+  if(play){const escaped=play.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");if(new RegExp(`(?:不玩|不想玩|不去|不要)\\s*(?:去|玩)?\\s*${escaped}`).test(text))patch.vetoPlay=play;else patch.play=play;}
   if(/先吃/.test(text))patch.order="eat";else if(/先玩/.test(text))patch.order="play";
   if(/两场|2场/.test(text))patch.rounds=2;else if(/一场|1场/.test(text))patch.rounds=1;
   if(/不续摊|续摊不来|结束就走/.test(text))patch.after="no";else if(/续摊/.test(text))patch.after="yes";

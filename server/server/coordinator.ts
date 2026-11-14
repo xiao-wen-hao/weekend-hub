@@ -5,6 +5,7 @@ import { negotiatePlan } from "../shared/planner";
 import { describePlanChanges } from "../shared/plan-diff";
 import { enqueueNotification } from "./notification";
 import {refreshBulletin} from './bulletin';
+import {fallbackIntent} from './intent-parser';
 
 type PollOption={id:string;label:string;value:string|number};
 type PollRow={id:string;room_id:string;proposal_id:string|null;facet:string;question:string;options_json:string;status:string;created_at:string};
@@ -38,12 +39,30 @@ export function recoverPendingCoordination(){
   const rows=db.prepare("SELECT id FROM rooms WHERE coordination_pending=1 AND phase!='final'").all() as {id:string}[];
   for(const row of rows)scheduleRoom(row.id,0);
 }
+// A blank room receives its first proposal only after two people explicitly
+// publish relevant ideas. Private messages never seed this public brief.
+export function startBlankPlanFromPublicShares(roomId:string){
+  const room=getRoom(roomId);if(!room||room.mode!=='blank'||room.current_proposal_id||room.phase==='final')return false;
+  const shares=db.prepare('SELECT author_id AS authorId,public_text AS text FROM room_public_shares WHERE room_id=? ORDER BY created_at,id').all(roomId) as {authorId:string;text:string}[];
+  const people=new Set<string>();const interests:{category:string;windowId:string|null}[]=[];
+  for(const share of shares){const parsed=fallbackIntent(share.text);if(parsed.category){people.add(share.authorId);interests.push({category:parsed.category,windowId:parsed.windowId});}}
+  if(people.size<2)return false;
+  const brief=JSON.parse(room.brief_json) as Brief;
+  const most=(values:string[])=>[...new Set(values)].sort((a,b)=>values.filter(v=>v===b).length-values.filter(v=>v===a).length)[0];
+  const food=most(interests.map(i=>i.category).filter(v=>FOODS.includes(v as typeof FOODS[number])));
+  const play=most(interests.map(i=>i.category).filter(v=>PLAYS.includes(v as typeof PLAYS[number])));
+  const windowId=most(interests.map(i=>i.windowId).filter((v):v is string=>!!v));
+  const next={...brief,food:food??'简餐',play:play??'散步聊天',timeWindow:windowId??'unsure'};
+  const changed=db.prepare("UPDATE rooms SET brief_json=?,revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,phase='discussing',updated_at=? WHERE id=? AND mode='blank' AND current_proposal_id IS NULL AND coordination_pending=0 AND phase!='final'").run(JSON.stringify(next),now(),roomId);
+  if(changed.changes){scheduleRoom(roomId);return true;}return false;
+}
 export function coordinateRoom(roomId:string,expected:CoordinationSnapshot|null=pendingSnapshot(roomId)){
   const room=getRoom(roomId);
   if(!room||!expected||room.phase==="final"||room.coordination_pending!==1||room.revision!==expected.revision||room.coordination_epoch!==expected.epoch||room.current_proposal_id!==expected.proposalId||activePoll(roomId))return;
   const brief=JSON.parse(room.brief_json) as Brief,locks=JSON.parse(room.locks_json) as PlanLocks;
   const members=getMembers(roomId);
-  const candidate=negotiatePlan(brief,members,locks);
+  const planningMembers=room.mode==='blank'&&!room.current_proposal_id?members.map(m=>({...m,preference:{}})):members;
+  const candidate=negotiatePlan(brief,planningMembers,locks);
   const current=currentPlan(roomId);
   const where="id=? AND revision=? AND coordination_epoch=? AND current_proposal_id IS ? AND coordination_pending=1 AND phase!='final'";
   const args=[roomId,expected.revision,expected.epoch,expected.proposalId] as const;
