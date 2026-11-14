@@ -13,8 +13,13 @@ if((await a(`/circles/${circle.id}/candidates`)).candidates.length)throw Error("
 for(const call of [a,b,c])await call(`/circles/${circle.id}/intents`,"POST",{text:"周六下午想玩桌游",matchAllowed:true,contactAllowed:true,confirmed:true});
 const own=await a(`/circles/${circle.id}/intents`);if(own.intents.length!==2)throw Error("Private intents leaked");
 const candidate=(await a(`/circles/${circle.id}/candidates`)).candidates[0];if(!candidate||candidate.memberCount!==3)throw Error("Candidate missing");
+const noticeA=(await a("/notifications")).notifications.find((n:any)=>n.kind==="candidate"&&n.payload.candidateId===candidate.id);
+if(!noticeA||noticeA.status!=="pending")throw Error("Candidate notification missing");
+let isolated=false;try{await b(`/notifications/${noticeA.id}/read`,"POST",{});}catch(e){isolated=String(e).includes("404");}if(!isolated)throw Error("Another user marked notification read");
+await a(`/notifications/${noticeA.id}/read`,"POST",{});await a(`/notifications/${noticeA.id}/read`,"POST",{});
+if((await a("/notifications")).notifications.find((n:any)=>n.id===noticeA.id)?.status!=="read")throw Error("Read state not persisted");
 for(const call of [a,b,c])await call(`/candidates/${candidate.id}/respond`,"POST",{decision:"yes"});
-const opened=await a(`/candidates/${candidate.id}/open`,"POST",{});if(!opened.roomId)throw Error("Room not created");
+const opened=await a(`/candidates/${candidate.id}/open`,"POST",{});if(!opened.roomId)throw Error("Room not created");if(!(await b("/notifications")).notifications.some((n:any)=>n.kind==="room_opened"&&n.payload.roomId===opened.roomId))throw Error("Room opening notification missing");
 let reopened=false;try{await b(`/candidates/${candidate.id}/open`,"POST",{});}catch(e){reopened=String(e).includes("409");}if(!reopened)throw Error("Candidate opened twice");
 const room=await b(`/rooms/${opened.roomId}`);if(!room.joined||!room.proposal)throw Error("Opening draft missing");if(new Date(`${room.room.date}T00:00:00Z`).getUTCDay()!==6)throw Error("Candidate room date is not Saturday");
 const withdrawn=await a(`/intents/${own.intents[0].id}/withdraw`,"POST",{});if(!withdrawn.ok)throw Error("Withdrawal failed");

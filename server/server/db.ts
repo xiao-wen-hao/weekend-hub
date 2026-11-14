@@ -68,6 +68,12 @@ CREATE INDEX IF NOT EXISTS idx_candidates_expiry ON candidates(status,expires_at
 `;
 if(version<5){db.transaction(()=>{db.exec(migration5);db.pragma("user_version = 5");})();}
 
+const migration6=`
+ALTER TABLE notification_outbox ADD COLUMN dedupe_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_dedupe ON notification_outbox(dedupe_key);
+`;
+if(version<6){db.transaction(()=>{db.exec(migration6);db.pragma("user_version = 6");})();}
+
 export type RoomRow={id:string;title:string;date:string;brief_json:string;phase:string;current_proposal_id:string|null;revision:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();

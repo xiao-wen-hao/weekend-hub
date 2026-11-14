@@ -8,11 +8,11 @@
 | T02 身份与邀请 | A01 | auth/circle/API/UI | 昵称、成员查询、邀请轮换与有效期、退出已实现并联调；角色转交已联调；Web 熟人圈、成员转交与退出已接入；Android 待做 | PARTIAL |
 | T03 意愿领域模型 | A02 | intent/LLM/UI | 证据校验、解析降级、确认门槛和撤回已实现并联调；软硬条件、日期范围和Web 编辑已接入；软硬条件和日期范围待做 | PARTIAL |
 | T04 候选匹配 | B01 | matching/candidate | 约束过滤、公平排序、去重限频；组合单测和 API 测试 | 待做 |
-| T05 邀约状态 | B02 | candidate/notification/UI | 私下回应、拒绝后人数不足自动关闭、成员资格复核和单次开房已实现；候选 48 小时过期已联调；通知待做 | PARTIAL |
+| T05 邀约状态 | B02 | candidate/notification/UI | 私下回应、拒绝后人数不足自动关闭、成员资格复核和单次开房已实现；候选 48 小时过期、站内通知已联调；外部推送待做 | PARTIAL |
 | T06 活动规划 | C01/D01 | planner/activity/LLM | 字段状态、证据、无解、450ms 串行协调；方案测试 | 待做 |
 | T07 投票 | E01 | poll/API/UI | 冻结成员、弃权、锁定、幂等；并发 API 测试 | 待做 |
 | T08 版本与报名 | F01 | plan/RSVP/API/UI | 快照、同版接受、三态报名和变更保留；状态机测试 | 待做 |
-| T09 公告与通知 | G01 | board/outbox/API/UI | 事务待发箱、站内待办、影响分析；重启测试 | 待做 |
+| T09 公告与通知 | G01 | board/outbox/API/UI | 候选与开房事务通知、用户隔离的站内待办已实现；方案影响分析与重启测试待做 | PARTIAL |
 | T10 小程序 | P01 | `miniapp/` | Taro 页面、登录和完整导航；开发工具与真机测试 | 待做 |
 | T11 部署验收 | Q01 | Docker/docs/tests | 十场景、备份恢复、Docker 实测；测试报告 | 待做 |
 
