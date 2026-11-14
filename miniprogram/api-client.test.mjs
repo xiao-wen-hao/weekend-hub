@@ -7,10 +7,10 @@ import ts from 'typescript'
 const source=fs.readFileSync(new URL('./src/api.ts',import.meta.url),'utf8')
 const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText
 const storage=new Map(),requests=[]
-let response={statusCode:200,data:{ok:true}},networkError=false,redirect=''
+let response={statusCode:200,data:{ok:true}},networkError=false,redirect='',relaunch='',backCount=0,pageCount=1
 const taro={
   getStorageSync:(key)=>storage.get(key),setStorageSync:(key,value)=>storage.set(key,value),removeStorageSync:(key)=>storage.delete(key),
-  redirectTo:async({url})=>{redirect=url},request:async(options)=>{requests.push(options);if(networkError)throw Error('offline');return response}
+  redirectTo:async({url})=>{redirect=url},reLaunch:async({url})=>{relaunch=url},navigateBack:async()=>{backCount++},getCurrentPages:()=>Array.from({length:pageCount}),request:async(options)=>{requests.push(options);if(networkError)throw Error('offline');return response}
 }
 const module={exports:{}}
 vm.runInNewContext(js,{module,exports:module.exports,require:()=>({__esModule:true,default:taro})})
@@ -46,4 +46,9 @@ test('network failure has actionable message',async()=>{
   networkError=true
   await assert.rejects(client.api('/rooms'),e=>e.status===0&&e.message.includes('检查地址和网络'))
   networkError=false
+})
+
+test('shared entry back button returns home when no page stack exists',()=>{
+  pageCount=1;client.backHome();assert.equal(relaunch,'/pages/home/index')
+  pageCount=2;client.backHome();assert.equal(backCount,1)
 })

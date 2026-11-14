@@ -1,7 +1,7 @@
 import {useEffect,useState} from 'react'
 import Taro,{useDidShow,useRouter,useShareAppMessage} from '@tarojs/taro'
 import {Button,Input,ScrollView,Text,View} from '@tarojs/components'
-import {api,ApiError,requireLogin,Room,roomPath,User} from '../../api'
+import {api,ApiError,backHome,requireLogin,Room,roomPath,User} from '../../api'
 
 const time=(hour:number)=>`${String(Math.floor(hour)).padStart(2,'0')}:${hour%1?'30':'00'}`
 const preferenceLabel=(key:string,value:unknown)=>{const names:Record<string,string>={from:'最早有空',until:'最晚离开',food:'想吃',vetoFood:'不吃',play:'想玩',vetoPlay:'不玩',order:'活动顺序',rounds:'玩乐场次',budgetMeal:'聚餐预算',budgetPlay1:'第一场预算',budgetPlay2:'第二场预算',budgetAfter:'续摊预算',after:'续摊',attend:'参加',area:'区域'};const shown=typeof value==='number'&&['from','until'].includes(key)?time(value):typeof value==='number'&&key.startsWith('budget')?`¥${value}`:key==='order'?value==='eat'?'先吃再玩':value==='play'?'先玩再吃':'都可以':key==='after'?value==='yes'?'愿意':value==='no'?'不参加':'待定':String(value);return `${names[key]||key}：${shown}`}
@@ -16,7 +16,7 @@ export default function RoomPage(){
   const act=async(route:string,data:unknown,success='已保存')=>{setBusy(true);setFeedback('');try{const next=await api<Room>(`/rooms/${id}/${route}`,'POST',data);setRoom(next);setError('');setFeedback(next.interpretation?`${next.interpretation.source==='model'?'AI 理解':'基础识别'}了 ${next.interpretation.applied.length} 项条件，主持人正在核对方案`:success);return true}catch(e){setError(e instanceof Error?e.message:'操作失败');await load(true);return false}finally{setBusy(false)}}
   const send=async()=>{const message=draft.trim();if(!message)return;const ok=await act('message',{text:message},'主持人已收到你的意见');if(ok)setDraft('')}
   const proposal=room?.proposal,poll=room?.poll,pending=room?.room.coordinationPending,final=room?.room.phase==='final',isHost=room?.room.hostId===user?.id
-  return <View className='page room-page'><View className='topline'><Text className='back' onClick={()=>Taro.navigateBack()}>‹ 返回</Text><Text className='pill'>{final?'已定案':pending?'协调中':room?.room.phase==='blocked'?'待协调':'讨论中'}</Text></View>
+  return <View className='page room-page'><View className='topline'><Text className='back' onClick={backHome}>‹ 返回</Text><Text className='pill'>{final?'已定案':pending?'协调中':room?.room.phase==='blocked'?'待协调':'讨论中'}</Text></View>
     {loading&&!room?<View className='card empty'>正在打开讨论间…</View>:<><Text className='eyebrow'>THE WEEKEND ROOM</Text><Text className='page-title'>{room?.room.title||'讨论间'}</Text><Text className='muted'>{room?.room.date} · {room?.members?.length||0} 位朋友</Text><Button className='secondary' openType='share'>邀请朋友加入 →</Button>
       {error&&<View className='alert error'>{error}<Button className='link' onClick={()=>load()}>刷新</Button></View>}{feedback&&<View className='alert success'>{feedback}</View>}
       {room&&!room.joined?<View className='card'><Text className='card-title'>加入这场周末局</Text><Text className='muted'>私人条件只在你与 AI 主持人的会话中显示。</Text><Button className='primary' disabled={busy} onClick={()=>act('join',{},'已加入讨论间')}>加入讨论间</Button></View>:room&&<>

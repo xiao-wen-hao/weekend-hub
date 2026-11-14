@@ -20,6 +20,7 @@ export const setToken=(v:string)=>v?Taro.setStorageSync(storageToken,v):Taro.rem
 export const setLoginTarget=(url:string)=>Taro.setStorageSync(storageTarget,url)
 export const consumeLoginTarget=()=>{const target=Taro.getStorageSync<string>(storageTarget)||'/pages/home/index';Taro.removeStorageSync(storageTarget);return target.startsWith('/pages/')?target:'/pages/home/index'}
 export const requireLogin=(target:string)=>{if(getToken())return false;setLoginTarget(target);void Taro.redirectTo({url:'/pages/login/index'});return true}
+export const backHome=()=>{if(Taro.getCurrentPages().length>1)void Taro.navigateBack();else void Taro.reLaunch({url:'/pages/home/index'})}
 export class ApiError extends Error{constructor(message:string,public status:number){super(message)}}
 export async function api<T>(path:string,method:'GET'|'POST'|'PATCH'='GET',data?:unknown):Promise<T>{
   let response:Taro.request.SuccessCallbackResult<T>

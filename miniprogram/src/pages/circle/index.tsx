@@ -1,7 +1,7 @@
 import {useState} from 'react'
 import Taro,{useDidShow,useRouter,useShareAppMessage} from '@tarojs/taro'
 import {Button,Input,Text,View} from '@tarojs/components'
-import {api,ApiError,circlePath,roomPath,requireLogin,Candidate,Circle,Intent,Member,times} from '../../api'
+import {api,ApiError,backHome,circlePath,roomPath,requireLogin,Candidate,Circle,Intent,Member,times} from '../../api'
 
 export default function CirclePage(){
   const route=useRouter(),requested=route.params.id||'',sharedCode=route.params.code||''
@@ -16,7 +16,7 @@ export default function CirclePage(){
   const join=async()=>{setBusy(true);setError('');try{const x=await api<{id:string}>('/circles/join','POST',{code:code.trim()});setCode('');setMessage('已加入圈子');await load(x.id)}catch(e){setError(e instanceof Error?e.message:'加入失败')}finally{setBusy(false)}}
   const respond=(c:Candidate,decision:string)=>run(async()=>{await api(`/candidates/${c.id}/respond`,'POST',{decision})},'回应已保存')
   const open=(c:Candidate)=>run(async()=>{const x=await api<{roomId:string}>(`/candidates/${c.id}/open`,'POST',{});await Taro.navigateTo({url:roomPath(x.roomId)})},'讨论间已开启')
-  return <View className='page'><View className='topline'><Text className='back' onClick={()=>Taro.navigateBack()}>‹ 返回</Text><Text className='eyebrow'>FRIENDS FIRST</Text></View><Text className='page-title'>熟人圈</Text><Text className='muted'>先表达真实意愿，三位朋友愿意讨论时再开局。</Text>
+  return <View className='page'><View className='topline'><Text className='back' onClick={backHome}>‹ 返回</Text><Text className='eyebrow'>FRIENDS FIRST</Text></View><Text className='page-title'>熟人圈</Text><Text className='muted'>先表达真实意愿，三位朋友愿意讨论时再开局。</Text>
     {error&&<View className='alert error'>{error}<Button className='link' onClick={()=>load()}>重试</Button></View>}{message&&<View className='alert success'>{message}</View>}
     <View className='card'><Text className='card-title'>创建或加入</Text><Text className='field-label'>新圈子名字</Text><View className='inline-form'><Input className='field' value={name} onInput={e=>setName(e.detail.value)} placeholder='例如 周末搭子'/><Button className='small-btn' disabled={busy||!name.trim()} onClick={create}>创建</Button></View><Text className='field-label'>朋友的邀请码</Text><View className='inline-form'><Input className='field' value={code} onInput={e=>setCode(e.detail.value)} placeholder='输入邀请码'/><Button className='small-btn' disabled={busy||!code.trim()} onClick={join}>加入</Button></View>{invite&&<View className='invite-box' onClick={()=>Taro.setClipboardData({data:invite})}>邀请码 {invite} · 点按复制</View>}</View>
     {loading?<View className='card empty'>正在加载圈子…</View>:<>{circles.length?<><View className='choice-row'>{circles.map(c=><Text className={selected===c.id?'choice selected':'choice'} key={c.id} onClick={()=>void load(c.id)}>{c.name}</Text>)}</View><View className='card'><View className='row'><Text className='card-title'>{current?.name}</Text><Text className='pill'>{current?.role==='owner'?'圈主':'成员'}</Text></View><Text className='muted small'>邀请码 {current?.joinCode} · 默认七天有效</Text><View className='action-row'><Button className='small-btn' onClick={()=>Taro.setClipboardData({data:current?.joinCode||''})}>复制邀请码</Button><Button className='small-btn' openType='share'>分享圈子</Button></View><Text className='subheading'>圈子成员 · {members.length}</Text><View className='member-grid'>{members.map(m=><View className='member-chip' key={m.id}><Text className='avatar'>{m.name.slice(0,1)}</Text><Text>{m.name}{m.role==='owner'?' · 圈主':''}</Text></View>)}</View></View>
