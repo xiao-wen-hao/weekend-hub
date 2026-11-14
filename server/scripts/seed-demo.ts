@@ -33,4 +33,19 @@ for(const user of users)await user(`/candidates/${candidate.id}/respond`,"POST",
 const {roomId}=await owner(`/candidates/${candidate.id}/open`,"POST",{});
 await owner(`/rooms/${roomId}/message`,"POST",{text:"我想在学校附近集合，先吃再玩，第一场桌游预算80元，聚餐人均预算120元。"});
 await users[1](`/rooms/${roomId}/message`,"POST",{text:"我最晚21点要离开，不能吃火锅，想吃烤肉。聚餐人均最多100元。"});
-console.log(JSON.stringify({ok:true,roomId,circleId:circle.id,url:`${base}/?room=${roomId}`,accounts:accounts.map(x=>x.username),password,notes:"真实 API 创建；演示时可用另外两位参与者继续私聊、投票、确认和分项报名"}));
+const waitForPlan=async()=>{for(let n=0;n<30;n++){const state=await owner(`/rooms/${roomId}`);if(state.proposal?.pendingFinal?.length===0&&!state.poll)return state;await new Promise(resolve=>setTimeout(resolve,300));}throw Error("演示草案未在预期时间内就绪")};
+let state=await waitForPlan();
+if(process.env.DEMO_COMPLETE==="1"){
+  state=await owner(`/rooms/${roomId}/polls`,"POST",{facet:"food"});
+  const poll=state.poll;if(!poll)throw Error("未发起真实投票");
+  const meal=state.proposal.plan.segments.find((segment:{id:string})=>segment.id==="meal")?.category;
+  const choice=poll.options.find((option:{value:string})=>option.value===meal)??poll.options[0];
+  for(const user of users)await user(`/rooms/${roomId}/polls/${poll.id}/vote`,"POST",{optionId:choice.id});
+  state=await waitForPlan();
+  const proposalId=state.proposal.id;
+  for(const user of users)for(const segment of state.proposal.plan.segments)await user(`/rooms/${roomId}/attendance`,"POST",{proposalId,segmentId:segment.id,decision:"yes"});
+  for(const user of users)await user(`/rooms/${roomId}/confirm`,"POST",{proposalId,decision:"accept"});
+  state=await owner(`/rooms/${roomId}`);
+  if(state.room.phase!=="final"||state.proposal.confirmed!==4||state.proposal.attendance.length!==state.proposal.plan.segments.length*4)throw Error("投票、确认或分项报名未完成");
+}
+console.log(JSON.stringify({ok:true,roomId,circleId:circle.id,url:`${base}/?room=${roomId}`,accounts:accounts.map(x=>x.username),password,phase:state.room.phase,version:state.proposal.version,confirmed:state.proposal.confirmed,attendance:state.proposal.attendance.length,notes:process.env.DEMO_COMPLETE==="1"?"已用真实业务接口完成投票、逐人确认和分项报名":"现场可继续投票、确认和分项报名"}));
