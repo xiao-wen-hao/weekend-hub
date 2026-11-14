@@ -2,6 +2,8 @@ import { db, getRoom, now, uid } from "./db";
 import { FOODS, PLAYS, formatTime, mealOf, playOf } from "../shared/domain";
 import type { Brief, MemberPreference, Plan, PlanLocks, Preference } from "../shared/domain";
 import { negotiatePlan } from "../shared/planner";
+import { describePlanChanges } from "../shared/plan-diff";
+import { enqueueNotification } from "./notification";
 
 type PollOption={id:string;label:string;value:string|number};
 type PollRow={id:string;room_id:string;proposal_id:string|null;facet:string;question:string;options_json:string;status:string;created_at:string};
@@ -45,7 +47,9 @@ export function coordinateRoom(roomId:string){
     const result=db.prepare("UPDATE rooms SET current_proposal_id=?,phase='discussing',updated_at=? WHERE id=? AND revision=?").run(proposalId,stamp,roomId,room.revision);
     if(!result.changes)return false;
     db.prepare("INSERT INTO proposals(id,room_id,version,plan_json,kind,created_at) VALUES(?,?,?,?,?,?)").run(proposalId,roomId,version,JSON.stringify(candidate),"candidate",stamp);
-    emitEvent(roomId,"proposal",`主持人更新了第 ${version} 版讨论方案。请查看时间、活动和每项预算，再决定是否接受。`);
+    const changes=current?describePlanChanges(current.plan,candidate):["初始草案"];
+    emitEvent(roomId,"proposal",`主持人更新了第 ${version} 版讨论方案。${changes.length?`本次变更：${changes.join("、")}。`:""}请重新查看并确认。`);
+    for(const m of members)enqueueNotification(m.userId,"plan_updated",{roomId,version,changes},`plan:${roomId}:${version}:${m.userId}`);
     return true;
   })();
   if(updated)maybeAutoPoll(roomId,brief,members,locks,candidate);

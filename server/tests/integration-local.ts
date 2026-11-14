@@ -42,6 +42,8 @@ await call(b,`/api/rooms/${roomId}/polls/${state.poll!.id}/vote`,"POST",{optionI
 await sleep(900);
 state=await call<Room>(host,`/api/rooms/${roomId}`);
 assert.equal(state.poll,null);
+const revisions=await call<{notifications:{kind:string;payload:{roomId?:string;version?:number;changes?:string[]}}[]}>(host,"/api/notifications");
+assert.ok(revisions.notifications.some(n=>n.kind==="plan_updated"&&n.payload.roomId===roomId&&n.payload.version===state.proposal.version));
 const proposalId=state.proposal.id;
 await call(host,`/api/rooms/${roomId}/attendance`,"POST",{proposalId,segmentId:"meal",decision:"yes"});
 const afterRsvp=await call<Room>(a,`/api/rooms/${roomId}`);
@@ -52,4 +54,6 @@ await call(b,`/api/rooms/${roomId}/confirm`,"POST",{proposalId,decision:"accept"
 state=await call<Room>(host,`/api/rooms/${roomId}`);
 assert.equal(state.room.phase,"final");
 assert.equal(state.proposal.confirmed,3);
+const finalNotices=await call<{notifications:{kind:string;payload:{roomId?:string}}[]}>(a,"/api/notifications");
+assert.ok(finalNotices.notifications.some(n=>n.kind==="room_final"&&n.payload.roomId===roomId));
 console.log(JSON.stringify({ok:true,roomId,version:state.proposal.version,privateMessagesIsolated:true,pollClosed:true,confirmed:3}));

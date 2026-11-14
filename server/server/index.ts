@@ -12,7 +12,7 @@ import { FOODS, PLAYS, START_WINDOWS } from "../shared/domain";
 import { interpret } from "./language";
 import community from "./community";
 import management from "./management";
-import notification from "./notification";
+import notification,{enqueueNotification} from "./notification";
 
 const app=express();
 app.set("trust proxy",1);
@@ -175,7 +175,7 @@ app.post("/api/rooms/:id/confirm",(req,res)=>{
     if(decision==="reject")db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'assistant',?,?)").run(uid(),access.room.id,access.user.id,"哪一部分不合适？可以直接说时间、区域、顺序、吃什么、玩什么或具体预算。我会先私下理解，再决定是否发起投票。",now());
     const n=(db.prepare("SELECT COUNT(*) AS n FROM confirmations WHERE proposal_id=? AND decision='accept'").get(proposal.id) as {n:number}).n;
     const total=(db.prepare("SELECT COUNT(*) AS n FROM members WHERE room_id=?").get(access.room.id) as {n:number}).n;
-    if(n===total&&total>=3){db.prepare("UPDATE rooms SET phase='final',updated_at=? WHERE id=?").run(now(),access.room.id);emitEvent(access.room.id,"final","所有参与者都确认了同一版方案，这场聚会正式定案。" );}
+    if(n===total&&total>=3){db.prepare("UPDATE rooms SET phase='final',updated_at=? WHERE id=?").run(now(),access.room.id);emitEvent(access.room.id,"final","所有参与者都确认了同一版方案，这场聚会正式定案。" );for(const member of getMembers(access.room.id))enqueueNotification(member.userId,"room_final",{roomId:access.room.id,version:proposal.version},`final:${access.room.id}:${proposal.version}:${member.userId}`);}
     else if(access.room.phase==="final")db.prepare("UPDATE rooms SET phase='discussing',updated_at=? WHERE id=?").run(now(),access.room.id);
   })();
   res.json(publicRoom(access.room.id,access.user.id));
