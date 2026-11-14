@@ -211,6 +211,7 @@ app.post("/api/rooms/:id/attendance",(req,res)=>{
 });
 
 app.use("/api",(_req,res)=>fail(res,"未找到",404));
+app.use((error:unknown,_req:express.Request,res:express.Response,next:express.NextFunction)=>{console.error("API request failed",error);if(res.headersSent)return next(error);res.status(500).json({error:"服务器暂时无法完成请求"});});
 const port=Number(process.env.PORT??3000),prod=process.argv.includes("--prod");
 if(prod){const dist=path.resolve("dist");app.use(express.static(dist));app.get("/{*any}",(_req,res)=>res.sendFile(path.join(dist,"index.html")));}
 else{const vite=await createViteServer({server:{middlewareMode:true},appType:"spa"});app.use(vite.middlewares);}

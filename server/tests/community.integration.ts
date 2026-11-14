@@ -16,7 +16,7 @@ const candidate=(await a(`/circles/${circle.id}/candidates`)).candidates[0];if(!
 for(const call of [a,b,c])await call(`/candidates/${candidate.id}/respond`,"POST",{decision:"yes"});
 const opened=await a(`/candidates/${candidate.id}/open`,"POST",{});if(!opened.roomId)throw Error("Room not created");
 let reopened=false;try{await b(`/candidates/${candidate.id}/open`,"POST",{});}catch(e){reopened=String(e).includes("409");}if(!reopened)throw Error("Candidate opened twice");
-const room=await b(`/rooms/${opened.roomId}`);if(!room.joined||!room.proposal)throw Error("Opening draft missing");
+const room=await b(`/rooms/${opened.roomId}`);if(!room.joined||!room.proposal)throw Error("Opening draft missing");if(new Date(`${room.room.date}T00:00:00Z`).getUTCDay()!==6)throw Error("Candidate room date is not Saturday");
 const withdrawn=await a(`/intents/${own.intents[0].id}/withdraw`,"POST",{});if(!withdrawn.ok)throw Error("Withdrawal failed");
 const second=await a("/circles","POST",{name:"编辑测试圈"});
 await b("/circles/join","POST",{code:second.joinCode});await c("/circles/join","POST",{code:second.joinCode});
