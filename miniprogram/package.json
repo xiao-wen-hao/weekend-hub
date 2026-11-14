@@ -5,7 +5,8 @@
   "scripts": {
     "dev:weapp": "taro build --type weapp --watch",
     "build:weapp": "taro build --type weapp",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test api-client.test.mjs"
   },
   "dependencies": {
     "@tarojs/components": "4.3.3",

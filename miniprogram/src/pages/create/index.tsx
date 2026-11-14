@@ -1,12 +1,13 @@
 import {useState} from 'react'
-import Taro from '@tarojs/taro'
+import Taro,{useDidShow} from '@tarojs/taro'
 import {Button,Input,Picker,Text,View} from '@tarojs/components'
-import {api} from '../../api'
+import {api,ApiError,requireLogin} from '../../api'
 const foods=['火锅','烤肉','川菜','湘菜','日料','粤菜','西餐','简餐']
 const plays=['桌游','KTV','电影','剧本杀','密室逃脱','保龄球','逛街','散步聊天']
 const nextSaturday=()=>{const d=new Date();d.setDate(d.getDate()+((6-d.getDay()+7)%7||7));return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 export default function Create(){
+  useDidShow(()=>{requireLogin('/pages/create/index')})
   const [title,setTitle]=useState(''),[date,setDate]=useState(nextSaturday()),[window,setWindow]=useState('unsure'),[food,setFood]=useState(foods[0]),[play,setPlay]=useState(plays[0]),[area,setArea]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('')
-  const create=async()=>{setBusy(true);try{const result=await api<{id:string}>('/rooms','POST',{title,date,timeWindow:window,area,food,play,secondPlay:null,rounds:1,order:'either',after:false,budget:{meal:null,play1:null,play2:null,after:null},note:''});Taro.redirectTo({url:`/pages/room/index?id=${result.id}`})}catch(e){setError(e instanceof Error?e.message:'创建失败')}finally{setBusy(false)}}
+  const create=async()=>{setBusy(true);try{const result=await api<{id:string}>('/rooms','POST',{title,date,timeWindow:window,area,food,play,secondPlay:null,rounds:1,order:'either',after:false,budget:{meal:null,play1:null,play2:null,after:null},note:''});Taro.redirectTo({url:`/pages/room/index?id=${result.id}`})}catch(e){if(e instanceof ApiError&&e.status===401)requireLogin('/pages/create/index');else setError(e instanceof Error?e.message:'创建失败')}finally{setBusy(false)}}
   return <View className='page'><Text className='eyebrow'>START A HUDDLE</Text><Text className='page-title'>先放出一版，再慢慢商量</Text><Text className='muted'>这是讨论起点，朋友们加入后可以私下提出条件。</Text><View className='card form-card'><Text className='field-label'>聚会名字</Text><Input className='field' value={title} onInput={e=>setTitle(e.detail.value)} placeholder='比如：周末老友局'/><Text className='field-label'>哪一天</Text><Picker mode='date' value={date} onChange={e=>setDate(e.detail.value)}><View className='field'>{date}</View></Picker><Text className='field-label'>大概什么时候</Text><View className='choice-row'>{[{id:'morning',text:'上午'},{id:'noon',text:'中午'},{id:'afternoon',text:'下午'},{id:'evening',text:'晚上'},{id:'unsure',text:'待商量'}].map(x=><Text className={window===x.id?'choice selected':'choice'} key={x.id} onClick={()=>setWindow(x.id)}>{x.text}</Text>)}</View><Text className='field-label'>吃什么</Text><Picker range={foods} value={foods.indexOf(food)} onChange={e=>setFood(foods[Number(e.detail.value)])}><View className='field'>{food} ›</View></Picker><Text className='field-label'>玩什么</Text><Picker range={plays} value={plays.indexOf(play)} onChange={e=>setPlay(plays[Number(e.detail.value)])}><View className='field'>{play} ›</View></Picker><Text className='field-label'>大致区域（可留空）</Text><Input className='field' value={area} onInput={e=>setArea(e.detail.value)} placeholder='例如学校附近'/>{error&&<Text className='error'>{error}</Text>}<Button className='primary' disabled={!title.trim()||busy} loading={busy} onClick={create}>生成开局草案 →</Button></View></View>
 }
