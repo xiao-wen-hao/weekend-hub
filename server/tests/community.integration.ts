@@ -16,5 +16,12 @@ const opened=await a(`/candidates/${candidate.id}/open`,"POST",{});if(!opened.ro
 let reopened=false;try{await b(`/candidates/${candidate.id}/open`,"POST",{});}catch(e){reopened=String(e).includes("409");}if(!reopened)throw Error("Candidate opened twice");
 const room=await b(`/rooms/${opened.roomId}`);if(!room.joined||!room.proposal)throw Error("Opening draft missing");
 const withdrawn=await a(`/intents/${own.intents[0].id}/withdraw`,"POST",{});if(!withdrawn.ok)throw Error("Withdrawal failed");
-console.log(JSON.stringify({ok:true,candidateId:candidate.id,roomId:opened.roomId,privateIntents:true,participants:3}));
+const second=await a("/circles","POST",{name:"编辑测试圈"});
+await b("/circles/join","POST",{code:second.joinCode});await c("/circles/join","POST",{code:second.joinCode});
+const secondIntents=[];for(const call of [a,b,c])secondIntents.push(await call(`/circles/${second.id}/intents`,"POST",{text:"周六下午想玩桌游",matchAllowed:true,contactAllowed:true,confirmed:true}));
+const secondCandidate=(await a(`/circles/${second.id}/candidates`)).candidates[0];if(!secondCandidate)throw Error("Second candidate missing");
+const edit=await a(`/intents/${secondIntents[0].id}`,"PATCH",{category:"KTV"});
+if(edit.status!=="paused"||edit.confirmedAt!==null)throw Error("Edited intent stayed confirmed");
+const closed=(await a(`/circles/${second.id}/candidates`)).candidates[0];if(closed.status!=="closed")throw Error("Candidate stayed open after consent changed");
+console.log(JSON.stringify({ok:true,candidateId:candidate.id,roomId:opened.roomId,privateIntents:true,participants:3,editedIntentRevokesCandidate:true}));
 export {};

@@ -5,7 +5,7 @@ PASS 仅表示已实现且有测试证据；PARTIAL 为仅部分实现；FAIL �
 | 编号 | 需求 | 模块与文件 | 当前状态 | 验收测试 |
 |---|---|---|---|---|
 | A01 | 注册登录与圈子 | `server/auth.ts`、`community.ts`、Android MainActivity | PARTIAL | 多账号注册、加入、权限与重启 |
-| A02 | 意愿自然输入、确认、编辑、有效期、双授权 | `community.ts`、`intent-parser.ts`、意愿 UI | PARTIAL | 证据校验与未确认不匹配已通过；修改、暂停、到期待测 |
+| A02 | 意愿自然输入、确认、编辑、有效期、双授权 | `community.ts`、`intent-parser.ts`、意愿 UI | PARTIAL | 证据校验与未确认不匹配已通过；修改及自动撤权已联调；前端编辑、到期待测 |
 | B01 | 同圈 3–5 人候选、硬约束、公平排序、去重限频 | `community.ts`、Matching 模块待建 | PARTIAL | 相容/冲突组合、重复请求 |
 | B02 | 私下试探状态与正式开房 | `community.ts` | PARTIAL | 三账号开房、失效授权、重复开房已通过；过期待测 |
 | C01 | 直接发起与开局字段状态 | `server/index.ts`、`shared/planner.ts` | PARTIAL | 草案假设、未知字段不被确认 |
