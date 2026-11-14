@@ -13,5 +13,6 @@ PASS 仅表示已实现且有测试证据；PARTIAL 为仅部分实现；FAIL �
 | E01 | 投票名单、修改、弃权、锁定、硬约束复核 | `coordinator.ts`、`index.ts` | PARTIAL | 重复票、弃权、过期票 |
 | F01 | 不可变版本、同版接受、分项报名 | `db.ts`、`index.ts` | PARTIAL | 新旧版冲突、报名不等于接受 |
 | G01 | 公告、通知、变更、历史 | `coordinator.ts`、`notification.ts`、`src/CircleHub.tsx` | PARTIAL | 候选与开房待办、用户隔离已通过；通知重启与方案字段差异、成员待办已通过；更多变更场景待测 |
-| P01 | 微信小程序移动端 | Taro 客户端待建 | FAIL | 开发工具导入与真机十场景 |
+| P01 | 微信小程序移动端 | `miniprogram/` Taro 客户端 | PARTIAL | TypeScript 和微信编译通过；真实后端 Bearer 登录及房间读取通过；开发者工具与真机待验 |
 | Q01 | 十场景端到端、Docker 实测 | `tests/`、部署文档待补 | FAIL | 全场景执行并记录结果 |
+

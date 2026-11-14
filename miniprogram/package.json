@@ -1,0 +1,31 @@
+{
+  "name": "zhoumoju-weapp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:weapp": "taro build --type weapp --watch",
+    "build:weapp": "taro build --type weapp",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tarojs/components": "4.3.3",
+    "@tarojs/helper": "4.3.3",
+    "@tarojs/plugin-framework-react": "4.3.3",
+    "@tarojs/plugin-platform-weapp": "4.3.3",
+    "@tarojs/react": "4.3.3",
+    "@tarojs/runtime": "4.3.3",
+    "@tarojs/shared": "4.3.3",
+    "@tarojs/taro": "4.3.3",
+    "@tarojs/webpack5-runner": "^4.3.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@babel/preset-react": "^7.29.7",
+    "@tarojs/cli": "4.3.3",
+    "@types/node": "^22.15.0",
+    "@types/react": "^18.3.0",
+    "babel-preset-taro": "^4.3.3",
+    "typescript": "^5.9.0"
+  }
+}

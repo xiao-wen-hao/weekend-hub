@@ -1,0 +1,10 @@
+import {useState} from 'react'
+import Taro from '@tarojs/taro'
+import {Button,Input,Text,View} from '@tarojs/components'
+import {api,getBase,setBase,setToken,User} from '../../api'
+
+export default function Login(){
+  const [mode,setMode]=useState<'login'|'register'>('login'),[base,setServer]=useState(getBase()),[username,setUsername]=useState(''),[name,setName]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('')
+  const submit=async()=>{setBusy(true);setError('');try{setBase(base.trim());const result=await api<{user:User;accessToken:string}>(`/${mode}`,'POST',{username,name,password});if(!result.accessToken)throw Error('服务器没有返回小程序登录凭证');setToken(result.accessToken);Taro.reLaunch({url:'/pages/home/index'})}catch(e){setError(e instanceof Error?e.message:'登录失败')}finally{setBusy(false)}}
+  return <View className='page login-page'><View className='brand'>局</View><Text className='eyebrow'>WEEKEND, TOGETHER</Text><Text className='hero-title'>周末局，\n好朋友，好商量。</Text><Text className='muted'>真实说出你的时间、预算和想法，让 AI 主持人帮大家找到都能接受的安排。</Text><View className='card form-card'><Text className='card-title'>{mode==='login'?'欢迎回来':'加入周末局'}</Text><Text className='field-label'>后端地址</Text><Input className='field' value={base} onInput={e=>setServer(e.detail.value)} placeholder='https://你的服务器域名'/><Text className='field-label'>用户名</Text><Input className='field' value={username} onInput={e=>setUsername(e.detail.value)} placeholder='字母、数字或下划线'/>{mode==='register'&&<><Text className='field-label'>昵称</Text><Input className='field' value={name} onInput={e=>setName(e.detail.value)} placeholder='朋友们怎么称呼你'/></>}<Text className='field-label'>密码</Text><Input className='field' password value={password} onInput={e=>setPassword(e.detail.value)} placeholder='至少 8 位'/>{error&&<Text className='error'>{error}</Text>}<Button className='primary' loading={busy} disabled={busy} onClick={submit}>{mode==='login'?'登录并继续':'注册并继续'}</Button><Button className='link' onClick={()=>setMode(mode==='login'?'register':'login')}>{mode==='login'?'还没有账号？创建账号':'已有账号？返回登录'}</Button></View></View>
+}
