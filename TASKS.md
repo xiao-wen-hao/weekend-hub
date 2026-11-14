@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | T01 增量迁移 | A01/B01/G01 | `server/server/db.ts` | 新库和 v1 升级测试通过；后续补强现有表外键迁移 | PARTIAL |
 | T02 身份与邀请 | A01 | auth/circle/API/UI | 昵称、成员查询、邀请轮换与有效期、退出已实现并联调；角色转交和前端管理待做 | PARTIAL |
-| T03 意愿领域模型 | A02 | intent/LLM/UI | 证据、软硬条件、日期范围、确认编辑撤回；解析单测 | 待做 |
+| T03 意愿领域模型 | A02 | intent/LLM/UI | 证据校验、解析降级、确认门槛和撤回已实现并联调；软硬条件、日期范围和编辑待做 | PARTIAL |
 | T04 候选匹配 | B01 | matching/candidate | 约束过滤、公平排序、去重限频；组合单测和 API 测试 | 待做 |
 | T05 邀约状态 | B02 | candidate/notification/UI | 私下试探、拒绝、稍后、过期、开房；三账号联调 | 待做 |
 | T06 活动规划 | C01/D01 | planner/activity/LLM | 字段状态、证据、无解、450ms 串行协调；方案测试 | 待做 |

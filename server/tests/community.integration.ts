@@ -1,10 +1,15 @@
-const base="http://127.0.0.1:3000/api";
+const base=`http://127.0.0.1:${process.env.TEST_PORT??3000}/api`;
 async function client(n:number){let cookie="";const call=async(path:string,method="GET",body?:unknown)=>{const response=await fetch(base+path,{method,headers:{...(cookie?{Cookie:cookie}:{}),...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});const set=response.headers.get("set-cookie");if(set)cookie=set.split(";",1)[0];const data=await response.json() as any;if(!response.ok)throw Error(`${response.status} ${data.error}`);return data;};await call("/register","POST",{username:`test_${Date.now()}_${n}`,name:`用户${n}`,password:"test-password-123"});return call;}
 const [a,b,c]=await Promise.all([client(1),client(2),client(3)]);
 const circle=await a("/circles","POST",{name:"周末朋友"});
 await b("/circles/join","POST",{code:circle.joinCode});await c("/circles/join","POST",{code:circle.joinCode});
-for(const call of [a,b,c])await call(`/circles/${circle.id}/intents`,"POST",{text:"周六下午想玩桌游",matchAllowed:true,contactAllowed:true});
-const own=await a(`/circles/${circle.id}/intents`);if(own.intents.length!==1)throw Error("Private intents leaked");
+const pending=await a(`/circles/${circle.id}/intents`,"POST",{text:"周六下午想玩桌游",matchAllowed:true,contactAllowed:true});
+if(pending.status!=="paused"||pending.confirmedAt!==null)throw Error("Unconfirmed intent was activated");
+let blocked=false;try{await a(`/intents/${pending.id}`,"PATCH",{status:"active"});}catch(e){blocked=String(e).includes("409");}
+if(!blocked)throw Error("Unconfirmed intent could be activated");
+if((await a(`/circles/${circle.id}/candidates`)).candidates.length)throw Error("Unconfirmed intent matched");
+for(const call of [a,b,c])await call(`/circles/${circle.id}/intents`,"POST",{text:"周六下午想玩桌游",matchAllowed:true,contactAllowed:true,confirmed:true});
+const own=await a(`/circles/${circle.id}/intents`);if(own.intents.length!==2)throw Error("Private intents leaked");
 const candidate=(await a(`/circles/${circle.id}/candidates`)).candidates[0];if(!candidate||candidate.memberCount!==3)throw Error("Candidate missing");
 for(const call of [a,b,c])await call(`/candidates/${candidate.id}/respond`,"POST",{decision:"yes"});
 const opened=await a(`/candidates/${candidate.id}/open`,"POST",{});if(!opened.roomId)throw Error("Room not created");

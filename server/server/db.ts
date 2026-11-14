@@ -55,6 +55,12 @@ if(version<3){db.transaction(()=>{db.exec(migration3);db.pragma("user_version = 
 
 
 
+const migration4=`
+ALTER TABLE intents ADD COLUMN parsed_json TEXT;
+ALTER TABLE intents ADD COLUMN confirmed_at TEXT;
+`;
+if(version<4){db.transaction(()=>{db.exec(migration4);db.pragma("user_version = 4");})();}
+
 export type RoomRow={id:string;title:string;date:string;brief_json:string;phase:string;current_proposal_id:string|null;revision:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();
