@@ -30,6 +30,13 @@ for(const call of clients)await call(`/candidates/${candidate.id}/respond`,"POST
 const opened=await a(`/candidates/${candidate.id}/open`,"POST",{});
 const room=await b(`/rooms/${opened.roomId}`);
 if(!room.joined||room.room?.phase!=="draft"||!room.proposal)throw Error("Candidate did not open a real discussion room");
+const discussion=(await a(`/circles/${circle.id}/discussions`)).rooms;
+if(!discussion.some((x:any)=>x.id===opened.roomId&&x.memberCount===3))throw Error('Circle discussion list did not show the opened room');
+let outsiderCookie='';const outsider=async(route:string,method:'GET'|'POST'='GET',body?:unknown)=>{const response=await fetch(base+route,{method,headers:{...(outsiderCookie?{Cookie:outsiderCookie}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});const set=response.headers.get('set-cookie');if(set)outsiderCookie=set.split(';',1)[0];return response;};
+const registration=await outsider('/register','POST',{username:`v2o_${Date.now()}`,name:'圈外人',password:'test-password-123'});
+if(registration.status!==201)throw Error(`Outsider registration failed: ${registration.status}`);
+const outsiderStatus=(await outsider(`/circles/${circle.id}/discussions`)).status;
+if(outsiderStatus!==403)throw Error(`Outsider read circle discussion list: ${outsiderStatus}`);
 const database=new Database(path.join(process.env.DATA_DIR!,"weekend.db"),{readonly:true});
 try{
   const persisted=database.prepare("SELECT status,room_id FROM candidates WHERE id=?").get(candidate.id) as any;

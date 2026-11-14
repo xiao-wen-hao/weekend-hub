@@ -1,0 +1,14 @@
+import {useState} from 'react'
+import Taro,{useDidShow,useRouter} from '@tarojs/taro'
+import {Button,Text,View} from '@tarojs/components'
+import {api,circlePath,requireLogin,roomPath,Summary,Candidate} from '../../api'
+
+export default function DiscussionsPage(){
+  const circleId=useRouter().params.circleId||''
+  const [rooms,setRooms]=useState<Summary[]>([]),[candidates,setCandidates]=useState<Candidate[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('')
+  const load=async()=>{if(requireLogin(`/pages/discussions/index?circleId=${encodeURIComponent(circleId)}`))return;if(!circleId){setError('缺少熟人圈信息');setLoading(false);return}setLoading(true);try{const [r,c]=await Promise.all([api<{rooms:Summary[]}>(`/circles/${circleId}/discussions`),api<{candidates:Candidate[]}>(`/circles/${circleId}/candidates`)]);setRooms(r.rooms);setCandidates(c.candidates);setError('')}catch(e){setError(e instanceof Error?e.message:'讨论列表加载失败')}finally{setLoading(false)}}
+  useDidShow(()=>{void load()})
+  const active=rooms.filter(r=>r.phase!=='final'),finished=rooms.filter(r=>r.phase==='final'),waiting=candidates.filter(c=>c.status==='probing')
+  const row=(r:Summary)=><View className='card room-card' key={r.id} onClick={()=>Taro.navigateTo({url:roomPath(r.id)})}><View className='row'><Text className='pill'>{r.phase==='final'?'已定案':r.phase==='blocked'?'待协调':'讨论中'}</Text><Text className='arrow'>↗</Text></View><Text className='card-title'>{r.title}</Text><Text className='muted small'>{r.date} · {r.memberCount} 位朋友</Text></View>
+  return <View className='page'><View className='topline'><Text className='back' onClick={()=>Taro.navigateBack({delta:1})}>‹ 返回</Text><Text className='eyebrow'>CIRCLE HUDDLES</Text></View><Text className='page-title'>圈内讨论</Text><Text className='muted'>正在商量、等待回应和已经定案的局都在这里。</Text>{error&&<View className='alert error'>{error}<Button className='link' onClick={load}>重试</Button></View>}{loading?<View className='card empty'>正在加载讨论…</View>:<><View className='section-title'><Text>正在进行</Text><Text className='section-count'>{active.length}</Text></View>{active.length?active.map(row):<View className='card empty'>目前没有进行中的讨论。</View>}<View className='section-title'><Text>等待回应</Text><Text className='section-count'>{waiting.length}</Text></View>{waiting.length?waiting.map(c=><View className='card' key={c.id} onClick={()=>Taro.navigateTo({url:circlePath(circleId)})}><Text className='card-title'>{c.category} · {c.memberCount} 人的相近意愿</Text><Text className='muted small'>已有 {c.yesCount} 人愿意讨论。进入圈子回应 ›</Text></View>):<View className='card empty'>目前没有待回应的候选局。</View>}<View className='section-title'><Text>已经结束</Text><Text className='section-count'>{finished.length}</Text></View>{finished.length?finished.map(row):<View className='card empty'>还没有已定案的讨论。</View>}</>}</View>
+}
