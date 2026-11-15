@@ -80,6 +80,7 @@ assert.equal((await c(`/rooms/${roomId}`)).status,403);
 assert.equal((await a(`/rooms/${roomId}/leave`,'POST',{})).status,409,'host transfer required');
 assert.equal((await a(`/rooms/${roomId}/leave`,'POST',{transferTo:ids[1]})).status,200);
 assert.equal((await b(`/rooms/${roomId}`)).data.room.hostId,ids[1]);
+assert.equal((await b(`/circles/${circle.id}/leave`,'POST',{})).status,409,'circle departure cannot orphan an active hosted room');
 assert.equal((await b(`/rooms/${roomId}/invites`,'POST',{userId:ids[2]})).status,201);
 assert.equal((await b(`/rooms/${roomId}/leave`,'POST',{})).status,200,'sole host may close the room');
 assert.equal((await c(`/rooms/${roomId}/join`,'POST',{})).status,403,'expired invitation cannot join a closed room');
