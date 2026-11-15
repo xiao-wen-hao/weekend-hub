@@ -6,6 +6,7 @@ import { describePlanChanges } from "../shared/plan-diff";
 import { enqueueNotification } from "./notification";
 import {refreshBulletin} from './bulletin';
 import {fallbackIntent} from './intent-parser';
+import {nextSaturdayShanghai} from '../shared/calendar';
 
 type PollOption={id:string;label:string;value:string|number};
 type PollRow={id:string;room_id:string;proposal_id:string|null;facet:string;question:string;options_json:string;status:string;created_at:string};
@@ -15,7 +16,7 @@ export const pendingSnapshot=(roomId:string):CoordinationSnapshot|null=>{
   const room=getRoom(roomId);
   return room&&room.phase!=="final"&&room.coordination_pending===1?{revision:room.revision,epoch:room.coordination_epoch,proposalId:room.current_proposal_id}:null;
 };
-const planSignature=(plan:Plan)=>JSON.stringify({area:plan.area,segments:plan.segments.map(s=>({kind:s.kind,category:s.category,start:s.start,end:s.end,budgetCap:s.budgetCap}))});
+const planSignature=(plan:Plan)=>JSON.stringify({date:plan.date,area:plan.area,segments:plan.segments.map(s=>({kind:s.kind,category:s.category,start:s.start,end:s.end,budgetCap:s.budgetCap}))});
 
 export function getMembers(roomId:string):MemberPreference[]{
   const rows=db.prepare("SELECT m.user_id AS userId,u.display_name AS name,p.data_json AS dataJson FROM members m JOIN users u ON u.id=m.user_id JOIN preferences p ON p.room_id=m.room_id AND p.user_id=m.user_id WHERE m.room_id=? ORDER BY m.joined_at").all(roomId) as {userId:string;name:string;dataJson:string}[];
@@ -44,15 +45,19 @@ export function recoverPendingCoordination(){
 export function startBlankPlanFromPublicShares(roomId:string){
   const room=getRoom(roomId);if(!room||room.mode!=='blank'||room.current_proposal_id||room.phase==='final')return false;
   const shares=db.prepare('SELECT author_id AS authorId,public_text AS text FROM room_public_shares WHERE room_id=? ORDER BY created_at,id').all(roomId) as {authorId:string;text:string}[];
-  const people=new Set<string>();const interests:{category:string;windowId:string|null}[]=[];
-  for(const share of shares){const parsed=fallbackIntent(share.text);if(parsed.category){people.add(share.authorId);interests.push({category:parsed.category,windowId:parsed.windowId});}}
+  const people=new Set<string>();const interests:{category:string;windowId:string|null;area:string|null}[]=[];
+  for(const share of shares){const parsed=fallbackIntent(share.text);if(parsed.category){people.add(share.authorId);interests.push({category:parsed.category,windowId:parsed.windowId,area:parsed.area});}}
   if(people.size<2)return false;
   const brief=JSON.parse(room.brief_json) as Brief;
   const most=(values:string[])=>[...new Set(values)].sort((a,b)=>values.filter(v=>v===b).length-values.filter(v=>v===a).length)[0];
   const food=most(interests.map(i=>i.category).filter(v=>FOODS.includes(v as typeof FOODS[number])));
   const play=most(interests.map(i=>i.category).filter(v=>PLAYS.includes(v as typeof PLAYS[number])));
   const windowId=most(interests.map(i=>i.windowId).filter((v):v is string=>!!v));
-  const next={...brief,food:food??'简餐',play:play??'散步聊天',timeWindow:windowId??'unsure'};
+  const areas=[...new Set(interests.map(i=>i.area).filter((v):v is string=>!!v))];
+  const publicText=shares.map(s=>s.text).join(' / ');
+  const saturday=nextSaturdayShanghai(),sunday=new Date(`${saturday}T00:00:00Z`);sunday.setUTCDate(sunday.getUTCDate()+1);
+  const date=/周六|星期六/.test(publicText)&&!/周日|星期日|星期天/.test(publicText)?saturday:/周日|星期日|星期天/.test(publicText)&&!/周六|星期六/.test(publicText)?sunday.toISOString().slice(0,10):'待定';
+  const next={...brief,date,area:areas.length===1?areas[0]:'',food:food??'简餐',play:play??'散步聊天',timeWindow:windowId??'unsure'};
   const changed=db.prepare("UPDATE rooms SET brief_json=?,revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,phase='discussing',updated_at=? WHERE id=? AND mode='blank' AND current_proposal_id IS NULL AND coordination_pending=0 AND phase!='final'").run(JSON.stringify(next),now(),roomId);
   if(changed.changes){scheduleRoom(roomId);return true;}return false;
 }
@@ -100,6 +105,7 @@ function maybeAutoPoll(roomId:string,brief:Brief,members:MemberPreference[],lock
 
 export function pollOptions(facet:string,plan:Plan,brief:Brief,members:MemberPreference[]):{question:string;options:PollOption[]} {
   const meal=mealOf(plan),play=playOf(plan),start=plan.segments[0].start;
+  if(facet==='date'){const sat=nextSaturdayShanghai(),sun=new Date(`${sat}T00:00:00Z`);sun.setUTCDate(sun.getUTCDate()+1);const sunday=sun.toISOString().slice(0,10);return {question:'这次哪天出发更合适？',options:[{id:sat,label:`周六 ${sat}`,value:sat},{id:sunday,label:`周日 ${sunday}`,value:sunday}]};}
   if(facet==="food")return {question:"这次聚餐吃什么？",options:[brief.food,...members.map(m=>m.preference.food).filter((v):v is string=>!!v&&v!=="any"),...FOODS].filter((v,i,a)=>a.indexOf(v)===i).slice(0,4).map(v=>({id:v,label:v,value:v}))};
   if(facet==="play")return {question:"第一场玩什么？",options:[brief.play,...members.map(m=>m.preference.play).filter((v):v is string=>!!v&&v!=="any"),...PLAYS].filter((v,i,a)=>a.indexOf(v)===i).slice(0,4).map(v=>({id:v,label:v,value:v}))};
   if(facet==="time")return {question:"几点开始最方便？",options:[Math.max(9,start-1),start,Math.min(21,start+1)].filter((v,i,a)=>a.indexOf(v)===i).map(v=>({id:String(v),label:formatTime(v),value:v}))};
@@ -155,6 +161,7 @@ export function closePoll(roomId:string,pollId:string){
   const closed=db.transaction(()=>{
     const changed=db.prepare("UPDATE rooms SET locks_json=?,revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,phase='discussing',updated_at=? WHERE id=? AND phase!='final' AND coordination_pending=0 AND current_proposal_id IS ?").run(JSON.stringify(locks),now(),roomId,row.proposal_id);
     if(!changed.changes)return false;
+    if(row.facet==='date')db.prepare('UPDATE rooms SET date=? WHERE id=?').run(String(winner.value),roomId);
     db.prepare("UPDATE polls SET status='closed',closed_at=? WHERE id=?").run(now(),pollId);
     emitEvent(roomId,"poll_result",`匿名投票结束：「${winner.label}」获得最多支持，主持人正在检查新安排。`);
     refreshBulletin(roomId);

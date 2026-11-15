@@ -6,7 +6,7 @@ import {BulletinView,ShareView} from '../../V2Bulletin'
 
 const time=(hour:number)=>`${String(Math.floor(hour)).padStart(2,'0')}:${hour%1?'30':'00'}`
 const preferenceLabel=(key:string,value:unknown)=>{const names:Record<string,string>={from:'最早有空',until:'最晚离开',food:'想吃',vetoFood:'不吃',play:'想玩',vetoPlay:'不玩',order:'活动顺序',rounds:'玩乐场次',budgetMeal:'聚餐预算',budgetPlay1:'第一场预算',budgetPlay2:'第二场预算',budgetAfter:'续摊预算',after:'续摊',attend:'参加',area:'区域'};const shown=typeof value==='number'&&['from','until'].includes(key)?time(value):typeof value==='number'&&key.startsWith('budget')?`¥${value}`:key==='order'?value==='eat'?'先吃再玩':value==='play'?'先玩再吃':'都可以':key==='after'?value==='yes'?'愿意':value==='no'?'不参加':'待定':String(value);return `${names[key]||key}：${shown}`}
-const facets:Record<string,string>={time:'时间',food:'吃什么',play:'玩什么',order:'活动顺序',rounds:'玩几场',area:'区域',budgetMeal:'聚餐预算',budgetPlay1:'玩乐预算'}
+const facets:Record<string,string>={date:'日期',time:'时间',food:'吃什么',play:'玩什么',order:'活动顺序',rounds:'玩几场',area:'区域',budgetMeal:'聚餐预算',budgetPlay1:'玩乐预算'}
 export default function RoomPage(){
   const id=useRouter().params.id||'',path=roomPath(id)
   useShareAppMessage(()=>({title:'一起商量这场周末局',path}))

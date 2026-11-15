@@ -60,7 +60,7 @@ function satisfaction(plan:Plan,p:Preference):number {
 
 export function negotiatePlan(brief:Brief,members:MemberPreference[],locks:PlanLocks={}):Plan|null {
   if(members.length===0)return initialPlan(brief);
-  brief={...brief,area:locks.area||brief.area||members.find(m=>m.preference.area&&m.preference.area!=="any")?.preference.area||"",budget:{...brief.budget,meal:locks.budgetMeal??brief.budget.meal,play1:locks.budgetPlay1??brief.budget.play1,play2:locks.budgetPlay2??brief.budget.play2,after:locks.budgetAfter??brief.budget.after}};
+  brief={...brief,date:locks.date??brief.date,area:locks.area||brief.area||members.find(m=>m.preference.area&&m.preference.area!=="any")?.preference.area||"",budget:{...brief.budget,meal:locks.budgetMeal??brief.budget.meal,play1:locks.budgetPlay1??brief.budget.play1,play2:locks.budgetPlay2??brief.budget.play2,after:locks.budgetAfter??brief.budget.after}};
   const foods=[...new Set([locks.food??brief.food,...members.map(m=>m.preference.food).filter((x):x is string=>!!x)])].filter(x=>x!=="any");
   const plays=[...new Set([locks.play??brief.play,...members.map(m=>m.preference.play).filter((x):x is string=>!!x)])].filter(x=>x!=="any");
   const foodOptions=locks.food?[locks.food]:foods.slice(0,4);
@@ -196,6 +196,7 @@ export function validatePreferencePatch(raw:unknown):Partial<Preference> {
 
 export function finalizationMissing(plan:Plan):string[]{
   const missing:string[]=[];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(plan.date))missing.push('具体日期');
   if(!plan.area||plan.area==="区域待定")missing.push("大致区域");
   for(const segment of plan.segments){
     if(segment.budgetCap===null)missing.push(`${segment.label}预算`);

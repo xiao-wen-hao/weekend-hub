@@ -108,7 +108,7 @@ router.post("/candidates/:id/open",(req,res)=>{
   if(!eligible)return res.status(409).json({error:"意愿或授权已失效"});
   const invitees=db.prepare("SELECT cm.user_id AS userId FROM candidate_members cm JOIN circle_members m ON m.circle_id=? AND m.user_id=cm.user_id AND m.status='active' WHERE cm.candidate_id=? AND cm.user_id!=? AND cm.response IN ('pending','yes','later')").all(c.circle_id,c.id,u.id) as {userId:string}[];
   if(!invitees.length)return res.status(409).json({error:"需要至少一位可邀请的圈内成员"});
-  const brief:Brief={title:`${c.category}讨论`,date:nextSaturdayShanghai(),timeWindow:'unsure',area:'',food:'简餐',play:PLAYS.includes(c.category)?c.category:'散步聊天',secondPlay:null,rounds:1,order:'either',after:false,budget:{meal:null,play1:null,play2:null,after:null},note:''};
+  const brief:Brief={title:`${c.category}讨论`,date:'待定',timeWindow:'unsure',area:'',food:'简餐',play:PLAYS.includes(c.category)?c.category:'散步聊天',secondPlay:null,rounds:1,order:'either',after:false,budget:{meal:null,play1:null,play2:null,after:null},note:''};
   const roomId=uid(),stamp=now();
   db.transaction(()=>{
     db.prepare("INSERT INTO rooms(id,title,date,mode,brief_json,phase,current_proposal_id,revision,locks_json,created_by,created_at,updated_at) VALUES(?,?,?,'blank',?,'draft',NULL,0,'{}',?,?,?)").run(roomId,brief.title,brief.date,JSON.stringify(brief),u.id,stamp,stamp);

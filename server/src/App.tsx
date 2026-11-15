@@ -134,7 +134,7 @@ function PollCard({poll,isHost,busy,onVote,onClose}:{poll:Poll;isHost:boolean;bu
 }
 
 function PollChooser({onClose,onChoose,plan}:{onClose:()=>void;onChoose:(facet:string)=>void;plan:Plan|null}){
-  const facets=[{id:"time",label:"几点开始"},{id:"food",label:"吃什么"},{id:"play",label:"玩什么"},{id:"rounds",label:"玩几场"},{id:"order",label:"先吃还是先玩"},{id:"area",label:"大致区域"},{id:"budgetMeal",label:"聚餐预算"},{id:"budgetPlay1",label:"第一场预算"},...(plan?.segments.some(s=>s.id==="play2")?[{id:"budgetPlay2",label:"第二场预算"}]:[]),...(plan?.segments.some(s=>s.id==="after")?[{id:"budgetAfter",label:"续摊预算"}]:[])];
+  const facets=[{id:"date",label:"哪一天"},{id:"time",label:"几点开始"},{id:"food",label:"吃什么"},{id:"play",label:"玩什么"},{id:"rounds",label:"玩几场"},{id:"order",label:"先吃还是先玩"},{id:"area",label:"大致区域"},{id:"budgetMeal",label:"聚餐预算"},{id:"budgetPlay1",label:"第一场预算"},...(plan?.segments.some(s=>s.id==="play2")?[{id:"budgetPlay2",label:"第二场预算"}]:[]),...(plan?.segments.some(s=>s.id==="after")?[{id:"budgetAfter",label:"续摊预算"}]:[])];
   return <div className="modal-backdrop" onClick={onClose}><div className="create-modal poll-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={19}/></button><p className="eyebrow">ASK THE GROUP</p><h2>这次想听大家决定什么？</h2><p>选择一个真正有分歧的点。主持人会公开问题与选项，投票结果匿名统计。</p><div className="facet-grid">{facets.map(f=><button key={f.id} onClick={()=>onChoose(f.id)}>{f.label}<ArrowRight size={15}/></button>)}</div></div></div>;
 }
 

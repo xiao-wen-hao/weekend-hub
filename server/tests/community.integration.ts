@@ -21,7 +21,7 @@ if((await a("/notifications")).notifications.find((n:any)=>n.id===noticeA.id)?.s
 for(const call of [a,b,c])await call(`/candidates/${candidate.id}/respond`,"POST",{decision:"yes"});
 const opened=await a(`/candidates/${candidate.id}/open`,"POST",{});if(!opened.roomId)throw Error("Room not created");if(!(await b("/notifications")).notifications.some((n:any)=>n.kind==="discussion_invite"&&n.payload.roomId===opened.roomId))throw Error("Discussion invitation missing");
 let reopened=false;try{await b(`/candidates/${candidate.id}/open`,"POST",{});}catch(e){reopened=String(e).includes("409");}if(!reopened)throw Error("Candidate opened twice");
-const invitation=await b(`/rooms/${opened.roomId}`);if(invitation.joined||invitation.proposal)throw Error("Invitee joined without consent");await b(`/rooms/${opened.roomId}/join`,"POST",{});const room=await b(`/rooms/${opened.roomId}`);if(!room.joined||room.proposal)throw Error("Blank discussion invitation state wrong");if(new Date(`${room.room.date}T00:00:00Z`).getUTCDay()!==6)throw Error("Candidate room date is not Saturday");
+const invitation=await b(`/rooms/${opened.roomId}`);if(invitation.joined||invitation.proposal)throw Error("Invitee joined without consent");await b(`/rooms/${opened.roomId}/join`,"POST",{});const room=await b(`/rooms/${opened.roomId}`);if(!room.joined||room.proposal)throw Error("Blank discussion invitation state wrong");if(room.room.date!=="待定")throw Error("Candidate discussion invented a date");
 const withdrawn=await a(`/intents/${own.intents[0].id}/withdraw`,"POST",{});if(!withdrawn.ok)throw Error("Withdrawal failed");
 const second=await a("/circles","POST",{name:"编辑测试圈"});
 await b("/circles/join","POST",{code:second.joinCode});await c("/circles/join","POST",{code:second.joinCode});

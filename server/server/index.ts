@@ -241,7 +241,7 @@ app.post("/api/rooms/:id/polls",(req,res)=>{
   if(access.room.created_by!==access.user.id)return fail(res,"只有发起人可以发起公共投票",403);
   if(activePoll(access.room.id))return fail(res,"已有进行中的投票",409);
   const facet=String(req.body.facet??"");
-  if(!["food","play","time","order","rounds","area","budgetMeal","budgetPlay1","budgetPlay2","budgetAfter"].includes(facet))return fail(res,"无效的投票主题");
+  if(!["date","food","play","time","order","rounds","area","budgetMeal","budgetPlay1","budgetPlay2","budgetAfter"].includes(facet))return fail(res,"无效的投票主题");
   const current=currentPlan(access.room.id);if(!current)return fail(res,"还没有草案",409);
   const choice=pollOptions(facet,current.plan,JSON.parse(access.room.brief_json) as Brief,getMembers(access.room.id));
   if(!createPoll(access.room.id,facet,choice.options,choice.question,"manual"))return fail(res,"方案已更新，请重试投票",409);

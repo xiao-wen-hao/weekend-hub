@@ -29,6 +29,30 @@ assert.equal((await b(`/rooms/${roomId}/join`,'POST',{})).status,200);
 assert.equal((await b(`/rooms/${roomId}`)).data.joined,true);
 assert.equal((await a(`/rooms/${roomId}/message`,'POST',{text:'私人理由：秘密标记739，路线轻松一点'})).status,200);
 assert.ok(!JSON.stringify((await b(`/rooms/${roomId}`)).data).includes('秘密标记739'));
+assert.equal((await a(`/rooms/${roomId}/share`,'POST',{publicText:'周末想去爬山，学校附近',explicitApproval:true})).status,200);
+assert.equal((await b(`/rooms/${roomId}/share`,'POST',{publicText:'周末也想去徒步',explicitApproval:true})).status,200);
+let proposal:any=null;for(let i=0;i<40;i++){proposal=(await a(`/rooms/${roomId}`)).data.proposal;if(proposal)break;await new Promise(resolve=>setTimeout(resolve,100));}
+assert.ok(proposal,'approved public ideas should create a first discussion proposal');
+assert.ok(proposal.plan.segments.some((x:any)=>x.category==='徒步'));
+assert.equal(proposal.plan.date,'待定','ambiguous weekend cannot become a confirmed Saturday');
+assert.equal((await a(`/rooms/${roomId}/confirm`,'POST',{proposalId:proposal.id,decision:'accept'})).status,409);
+assert.ok(!JSON.stringify((await b(`/rooms/${roomId}`)).data.bulletin).includes('秘密标记739'));
+async function decide(facet:string,value:string){
+  const before=(await a(`/rooms/${roomId}`)).data.proposal.version;
+  const created=await a(`/rooms/${roomId}/polls`,'POST',{facet});assert.equal(created.status,200);
+  const poll=created.data.poll;const option=poll.options.find((x:any)=>x.id===value)||poll.options[0];assert.ok(option);
+  assert.equal((await a(`/rooms/${roomId}/polls/${poll.id}/vote`,'POST',{optionId:option.id})).status,200);
+  assert.equal((await b(`/rooms/${roomId}/polls/${poll.id}/vote`,'POST',{optionId:option.id})).status,200);
+  for(let i=0;i<50;i++){const state=(await a(`/rooms/${roomId}`)).data;if(!state.room.coordinationPending&&state.proposal?.version>before)return state.proposal;await new Promise(resolve=>setTimeout(resolve,100));}
+  throw Error(`Coordination after ${facet} vote did not produce a new proposal`);
+}
+proposal=await decide('date','');
+proposal=await decide('budgetMeal','100');
+proposal=await decide('budgetPlay1','100');
+assert.deepEqual(proposal.pendingFinal,[]);
+assert.equal((await a(`/rooms/${roomId}/confirm`,'POST',{proposalId:proposal.id,decision:'accept'})).status,200);
+assert.equal((await b(`/rooms/${roomId}/confirm`,'POST',{proposalId:proposal.id,decision:'accept'})).data.room.phase,'final');
+for(const segment of proposal.plan.segments)for(const call of [a,b])assert.equal((await call(`/rooms/${roomId}/attendance`,'POST',{proposalId:proposal.id,segmentId:segment.id,decision:'yes'})).status,200);
 const database=new Database(path.join(process.env.DATA_DIR!,'weekend.db'),{readonly:true});
-try{assert.equal((database.prepare('SELECT count(*) AS n FROM members WHERE room_id=?').get(roomId) as {n:number}).n,2);assert.equal((database.prepare('SELECT count(*) AS n FROM attendance WHERE proposal_id IN (SELECT id FROM proposals WHERE room_id=?)').get(roomId) as {n:number}).n,0);}finally{database.close();}
-console.log(JSON.stringify({ok:true,roomId,candidateId:candidate.id,twoMembers:true,outsiderDenied:true,noAutomaticAttendance:true}));
+try{assert.equal((database.prepare('SELECT count(*) AS n FROM members WHERE room_id=?').get(roomId) as {n:number}).n,2);assert.equal((database.prepare('SELECT count(*) AS n FROM confirmations WHERE proposal_id=? AND decision=\'accept\'').get(proposal.id) as {n:number}).n,2);assert.equal((database.prepare('SELECT count(*) AS n FROM attendance WHERE proposal_id=? AND decision=\'yes\'').get(proposal.id) as {n:number}).n,proposal.plan.segments.length*2);}finally{database.close();}
+console.log(JSON.stringify({ok:true,roomId,candidateId:candidate.id,twoMembers:true,outsiderDenied:true,finalVersion:proposal.version,attendance:proposal.plan.segments.length*2}));

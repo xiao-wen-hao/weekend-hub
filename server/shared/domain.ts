@@ -38,7 +38,7 @@ export type Plan = {
 export type MemberPreference = {userId:string;name:string;preference:Preference};
 export type QuickOption = {label:string;value:string;effect?:Partial<Preference>};
 export type Question = {id:string;facet:string;prompt:string;options:QuickOption[];hint:string};
-export type PlanLocks = {food?:string;play?:string;start?:number;order?:"eat"|"play";rounds?:1|2;area?:string;budgetMeal?:number;budgetPlay1?:number;budgetPlay2?:number;budgetAfter?:number;after?:boolean};
+export type PlanLocks = {date?:string;food?:string;play?:string;start?:number;order?:"eat"|"play";rounds?:1|2;area?:string;budgetMeal?:number;budgetPlay1?:number;budgetPlay2?:number;budgetAfter?:number;after?:boolean};
 
 export const formatTime=(hour:number)=>`${String(Math.floor(hour)).padStart(2,"0")}:${hour%1?"30":"00"}`;
 export const mealOf=(plan:Plan)=>plan.segments.find(s=>s.kind==="meal");
