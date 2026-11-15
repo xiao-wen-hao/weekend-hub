@@ -9,7 +9,6 @@ import { activePoll, closePoll, createPoll, currentPlan, emitEvent, getMembers, 
 import { initialPlan, nextQuestion, conflictQuestion, validatePreferencePatch, finalizationMissing } from "../shared/planner";
 import type { Brief, Plan, PlanLocks, Preference, Question } from "../shared/domain";
 import { FOODS, PLAYS, START_WINDOWS } from "../shared/domain";
-import {nextSaturdayShanghai} from '../shared/calendar';
 import { interpret } from "./language";
 import community from "./community";
 import management from "./management";
@@ -38,11 +37,11 @@ const fail=(res:express.Response,message:string,status=400)=>res.status(status).
 const userOrFail=(req:express.Request,res:express.Response)=>{const user=currentUser(req);if(!user)fail(res,"请先登录",401);return user;};
 const roomMember=(req:express.Request,res:express.Response)=>{const user=userOrFail(req,res);if(!user)return null;const room=getRoom(String(req.params.id));if(!room){fail(res,"讨论间不存在",404);return null;}if(!isMember(room.id,user.id)){fail(res,"请先加入讨论间",403);return null;}return {user,room};};
 
-function validateBrief(raw:unknown):Brief|null{
+function validateBrief(raw:unknown,allowUndecidedDate=false):Brief|null{
   if(!raw||typeof raw!=="object")return null;
   const x=raw as Record<string,unknown>;
   const title=String(x.title??"").trim().slice(0,60),date=String(x.date??"");
-  if(!title||!/^\d{4}-\d{2}-\d{2}$/.test(date))return null;
+  if(!title&&!allowUndecidedDate||!/^\d{4}-\d{2}-\d{2}$/.test(date)&&!(allowUndecidedDate&&date==='待定'))return null;
   const timeWindow=START_WINDOWS.find(w=>w.id===x.timeWindow)?.id??"unsure";
   const food=FOODS.includes(x.food as typeof FOODS[number])?String(x.food):"火锅";
   const play=PLAYS.includes(x.play as typeof PLAYS[number])?String(x.play):"桌游";
@@ -101,9 +100,15 @@ app.get("/api/rooms",(req,res)=>{
 });
 app.post("/api/rooms",async(req,res)=>{
   const user=userOrFail(req,res);if(!user)return;
+  const circleId=String(req.body.circleId??'').trim();
+  const inviteeIds=[...new Set<string>((Array.isArray(req.body.inviteeIds)?req.body.inviteeIds:[]).map((x:unknown)=>String(x)))].filter(id=>id!==user.id);
+  if(circleId){
+    if(!db.prepare("SELECT 1 FROM circle_members WHERE circle_id=? AND user_id=? AND status='active'").get(circleId,user.id))return fail(res,"不在所选熟人圈中",403);
+    if(inviteeIds.length>9||inviteeIds.some(id=>!db.prepare("SELECT 1 FROM circle_members WHERE circle_id=? AND user_id=? AND status='active'").get(circleId,id)))return fail(res,"邀请对象必须是圈内成员，最多 9 人",400);
+  }else if(inviteeIds.length)return fail(res,"请先选择熟人圈",400);
   const idea=String(req.body.idea??'').trim().slice(0,600),mode=req.body.mode==='blank'?'blank':'template';
-  const input=mode==='blank'?{...req.body,title:String(req.body.title??'').trim()||'周末讨论',date:req.body.date||nextSaturdayShanghai()}:req.body;
-  const brief=validateBrief(input);if(!brief)return fail(res,"请填写聚会名称和日期");
+  const input=mode==='blank'?{...req.body,title:String(req.body.title??'').trim()||'周末讨论',date:req.body.date||'待定'}:req.body;
+  const brief=validateBrief(input,mode==='blank');if(!brief)return fail(res,"请填写聚会名称和日期");
   const count=(db.prepare("SELECT COUNT(*) AS n FROM rooms WHERE created_by=?").get(user.id) as {n:number}).n;
   if(count>=30)return fail(res,"账号的讨论间数量已达上限",429);
   const understanding=mode==='blank'&&idea?await interpret(idea,null,[]):null;
@@ -112,6 +117,13 @@ app.post("/api/rooms",async(req,res)=>{
     db.prepare("INSERT INTO rooms(id,title,date,mode,brief_json,phase,current_proposal_id,revision,locks_json,created_by,created_at,updated_at) VALUES(?,?,?,?,?,'draft',?,0,'{}',?,?,?)").run(roomId,brief.title,brief.date,mode,JSON.stringify(brief),proposalId,user.id,stamp,stamp);
     db.prepare("INSERT INTO members(room_id,user_id,joined_at) VALUES(?,?,?)").run(roomId,user.id,stamp);
     db.prepare("INSERT INTO preferences(room_id,user_id,data_json,updated_at) VALUES(?,?,'{}',?)").run(roomId,user.id,stamp);
+    if(circleId){
+      db.prepare("INSERT INTO room_circle_invites(room_id,circle_id,user_id,status,created_at) VALUES(?,?,?,'accepted',?)").run(roomId,circleId,user.id,stamp);
+      for(const invitedId of inviteeIds){
+        db.prepare("INSERT INTO room_circle_invites(room_id,circle_id,user_id,status,created_at) VALUES(?,?,?,'pending',?)").run(roomId,circleId,invitedId,stamp);
+        enqueueNotification(invitedId,'discussion_invite',{roomId,circleId},`discussion_invite:${roomId}:${invitedId}`);
+      }
+    }
     if(understanding){const patch=validatePreferencePatch(understanding.patch);db.prepare('UPDATE preferences SET data_json=? WHERE room_id=? AND user_id=?').run(JSON.stringify(patch),roomId,user.id);db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'user',?,?)").run(uid(),roomId,user.id,idea,stamp);db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'assistant',?,?)").run(uid(),roomId,user.id,understanding.reply,new Date(Date.now()+1).toISOString());}
     if(proposalId&&plan)db.prepare("INSERT INTO proposals(id,room_id,version,plan_json,kind,created_at) VALUES(?,?,1,?,'initial',?)").run(proposalId,roomId,JSON.stringify(plan),stamp);
     emitEvent(roomId,"initial",mode==='blank'?'讨论间已建立，大家可以先说想法，再整理共同安排。':"主持人根据发起人的想法放出了第一版草案。时间、活动和预算都可以继续商量。" );
@@ -124,6 +136,8 @@ app.get("/api/rooms/:id",(req,res)=>{
   const room=getRoom(req.params.id);if(!room)return fail(res,"讨论间不存在",404);
   const candidate=db.prepare("SELECT id FROM candidates WHERE room_id=? AND status='opened'").get(room.id) as {id:string}|undefined;
   if(candidate&&!db.prepare("SELECT 1 FROM candidate_members WHERE candidate_id=? AND user_id=? AND response IN ('pending','yes','later')").get(candidate.id,user.id))return fail(res,"无权查看讨论邀请",403);
+  const circleRoom=db.prepare("SELECT circle_id FROM room_circle_invites WHERE room_id=? LIMIT 1").get(room.id) as {circle_id:string}|undefined;
+  if(circleRoom&&!db.prepare("SELECT 1 FROM room_circle_invites ri JOIN circle_members cm ON cm.circle_id=ri.circle_id AND cm.user_id=ri.user_id AND cm.status='active' WHERE ri.room_id=? AND ri.user_id=?").get(room.id,user.id))return fail(res,"无权查看讨论邀请",403);
   if(!isMember(room.id,user.id)){res.json({joined:false,room:{id:room.id,title:room.title,date:room.date}});return;}
   res.json(publicRoom(room.id,user.id));
 });
@@ -153,6 +167,8 @@ app.post("/api/rooms/:id/join",(req,res)=>{
   const room=getRoom(req.params.id);if(!room)return fail(res,"讨论间不存在",404);
   const candidate=db.prepare("SELECT id FROM candidates WHERE room_id=? AND status='opened'").get(room.id) as {id:string}|undefined;
   if(candidate&&!db.prepare("SELECT 1 FROM candidate_members WHERE candidate_id=? AND user_id=? AND response IN ('pending','yes','later')").get(candidate.id,user.id))return fail(res,"你不在这场讨论的邀请名单中",403);
+  const circleRoom=db.prepare("SELECT circle_id FROM room_circle_invites WHERE room_id=? LIMIT 1").get(room.id) as {circle_id:string}|undefined;
+  if(circleRoom&&!db.prepare("SELECT 1 FROM room_circle_invites ri JOIN circle_members cm ON cm.circle_id=ri.circle_id AND cm.user_id=ri.user_id AND cm.status='active' WHERE ri.room_id=? AND ri.user_id=?").get(room.id,user.id))return fail(res,"你不在这场讨论的邀请名单中",403);
   if(!isMember(room.id,user.id)){
     if(room.phase==="final")return fail(res,"这场聚会已定案",409);
     if(activePoll(room.id))return fail(res,"投票进行中，请等投票结束后加入",409);
@@ -161,6 +177,7 @@ app.post("/api/rooms/:id/join",(req,res)=>{
     db.transaction(()=>{
       db.prepare("INSERT INTO members(room_id,user_id,joined_at) VALUES(?,?,?)").run(room.id,user.id,now());
       db.prepare("INSERT INTO preferences(room_id,user_id,data_json,updated_at) VALUES(?,?,'{}',?)").run(room.id,user.id,now());
+      if(circleRoom)db.prepare("UPDATE room_circle_invites SET status='accepted' WHERE room_id=? AND user_id=?").run(room.id,user.id);
       db.prepare("UPDATE rooms SET revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=CASE WHEN mode='blank' AND current_proposal_id IS NULL THEN 0 ELSE 1 END,updated_at=? WHERE id=?").run(now(),room.id);
       emitEvent(room.id,"joined","有新朋友加入了讨论间。" );
       refreshBulletin(room.id);

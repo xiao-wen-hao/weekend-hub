@@ -102,6 +102,12 @@ CREATE INDEX idx_share_annotations_room ON room_share_annotations(room_id);
 `;
 if(version<10){db.transaction(()=>{db.exec(migration10);db.pragma("user_version = 10");})();}
 
+const migration11=`
+CREATE TABLE room_circle_invites(room_id TEXT NOT NULL REFERENCES rooms(id),circle_id TEXT NOT NULL REFERENCES circles(id),user_id TEXT NOT NULL REFERENCES users(id),status TEXT NOT NULL CHECK(status IN ('pending','accepted')),created_at TEXT NOT NULL,PRIMARY KEY(room_id,user_id));
+CREATE INDEX idx_room_circle_invites_circle ON room_circle_invites(circle_id,user_id);
+`;
+if(version<11){db.transaction(()=>{db.exec(migration11);db.pragma("user_version = 11");})();}
+
 export type RoomRow={id:string;title:string;date:string;mode:'blank'|'template';brief_json:string;phase:string;current_proposal_id:string|null;revision:number;coordination_pending:number;coordination_epoch:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();
