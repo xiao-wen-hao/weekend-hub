@@ -107,12 +107,14 @@ app.post("/api/rooms",async(req,res)=>{
     if(inviteeIds.length>9||inviteeIds.some(id=>!db.prepare("SELECT 1 FROM circle_members WHERE circle_id=? AND user_id=? AND status='active'").get(circleId,id)))return fail(res,"邀请对象必须是圈内成员，最多 9 人",400);
   }else if(inviteeIds.length)return fail(res,"请先选择熟人圈",400);
   const idea=String(req.body.idea??'').trim().slice(0,600),mode=req.body.mode==='blank'?'blank':'template';
+  const publicText=String(req.body.publicText??'').trim();
+  if(publicText&&(mode!=='blank'||req.body.explicitApproval!==true||publicText.length>300))return fail(res,'请确认准备公开的具体内容，限 300 字');
   const input=mode==='blank'?{...req.body,title:String(req.body.title??'').trim()||'周末讨论',date:req.body.date||'待定'}:req.body;
   const brief=validateBrief(input,mode==='blank');if(!brief)return fail(res,"请填写聚会名称和日期");
   const count=(db.prepare("SELECT COUNT(*) AS n FROM rooms WHERE created_by=?").get(user.id) as {n:number}).n;
   if(count>=30)return fail(res,"账号的讨论间数量已达上限",429);
   const understanding=mode==='blank'&&idea?await interpret(idea,null,[]):null;
-  const roomId=uid(),proposalId=mode==='template'?uid():null,stamp=now(),plan=mode==='template'?initialPlan(brief):null;
+  const roomId=uid(),proposalId=mode==='template'?uid():null,shareId=publicText?uid():null,stamp=now(),plan=mode==='template'?initialPlan(brief):null;
   db.transaction(()=>{
     db.prepare("INSERT INTO rooms(id,title,date,mode,brief_json,phase,current_proposal_id,revision,locks_json,created_by,created_at,updated_at) VALUES(?,?,?,?,?,'draft',?,0,'{}',?,?,?)").run(roomId,brief.title,brief.date,mode,JSON.stringify(brief),proposalId,user.id,stamp,stamp);
     db.prepare("INSERT INTO members(room_id,user_id,joined_at) VALUES(?,?,?)").run(roomId,user.id,stamp);
@@ -125,10 +127,12 @@ app.post("/api/rooms",async(req,res)=>{
       }
     }
     if(understanding){const patch=validatePreferencePatch(understanding.patch);db.prepare('UPDATE preferences SET data_json=? WHERE room_id=? AND user_id=?').run(JSON.stringify(patch),roomId,user.id);db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'user',?,?)").run(uid(),roomId,user.id,idea,stamp);db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'assistant',?,?)").run(uid(),roomId,user.id,understanding.reply,new Date(Date.now()+1).toISOString());}
+    if(shareId)db.prepare('INSERT INTO room_public_shares(id,room_id,author_id,source_message_id,public_text,created_at) VALUES(?,?,?,?,?,?)').run(shareId,roomId,user.id,null,publicText,stamp);
     if(proposalId&&plan)db.prepare("INSERT INTO proposals(id,room_id,version,plan_json,kind,created_at) VALUES(?,?,1,?,'initial',?)").run(proposalId,roomId,JSON.stringify(plan),stamp);
     emitEvent(roomId,"initial",mode==='blank'?'讨论间已建立，大家可以先说想法，再整理共同安排。':"主持人根据发起人的想法放出了第一版草案。时间、活动和预算都可以继续商量。" );
     refreshBulletin(roomId);
   })();
+  if(shareId)void annotatePublicShare(shareId);
   res.status(201).json({id:roomId});
 });
 app.get("/api/rooms/:id",(req,res)=>{

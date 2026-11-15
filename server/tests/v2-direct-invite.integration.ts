@@ -23,6 +23,10 @@ assert.equal((await b(`/rooms/${roomId}/join`,'POST',{})).status,200);
 assert.ok((await b(`/circles/${circle.id}/discussions`)).data.rooms.some((r:any)=>r.id===roomId));
 assert.equal((await a(`/rooms/${roomId}/message`,'POST',{text:'私人预算秘密739'})).status,200);
 assert.ok(!JSON.stringify((await b(`/rooms/${roomId}`)).data).includes('私人预算秘密739'));
+const publicBody={mode:'blank',title:'公开起点',idea:'我想约周末徒步',publicText:'我想约周末徒步',circleId:circle.id,inviteeIds:[invited.id],date:'待定',timeWindow:'unsure',area:'',food:'简餐',play:'徒步',secondPlay:null,rounds:1,order:'either',after:false,budget:{meal:null,play1:null,play2:null,after:null},note:''};
+assert.equal((await a('/rooms','POST',publicBody)).status,400,'public text needs explicit approval');
+const publicRoom=await a('/rooms','POST',{...publicBody,explicitApproval:true});assert.equal(publicRoom.status,201);
+assert.ok(JSON.stringify((await a(`/rooms/${publicRoom.data.id}`)).data.bulletin).includes('我想约周末徒步'));
 const database=new Database(path.join(process.env.DATA_DIR!,'weekend.db'),{readonly:true});
-try{assert.equal((database.prepare('SELECT count(*) AS n FROM members WHERE room_id=?').get(roomId) as {n:number}).n,2);assert.equal((database.prepare("SELECT count(*) AS n FROM room_circle_invites WHERE room_id=? AND status='accepted'").get(roomId) as {n:number}).n,2);assert.equal((database.prepare('SELECT count(*) AS n FROM proposals WHERE room_id=?').get(roomId) as {n:number}).n,0);}finally{database.close();}
+try{assert.equal((database.prepare('SELECT count(*) AS n FROM members WHERE room_id=?').get(roomId) as {n:number}).n,2);assert.equal((database.prepare("SELECT count(*) AS n FROM room_circle_invites WHERE room_id=? AND status='accepted'").get(roomId) as {n:number}).n,2);assert.equal((database.prepare('SELECT count(*) AS n FROM proposals WHERE room_id=?').get(roomId) as {n:number}).n,0);assert.equal((database.prepare('SELECT count(*) AS n FROM room_public_shares WHERE room_id=?').get(publicRoom.data.id) as {n:number}).n,1);}finally{database.close();}
 console.log(JSON.stringify({ok:true,roomId,invited:true,outsiderDenied:true,noAutoProposal:true}));
