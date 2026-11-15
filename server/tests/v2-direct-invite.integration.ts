@@ -27,6 +27,30 @@ const publicBody={mode:'blank',title:'公开起点',idea:'我想约周末徒步'
 assert.equal((await a('/rooms','POST',publicBody)).status,400,'public text needs explicit approval');
 const publicRoom=await a('/rooms','POST',{...publicBody,explicitApproval:true});assert.equal(publicRoom.status,201);
 assert.ok(JSON.stringify((await a(`/rooms/${publicRoom.data.id}`)).data.bulletin).includes('我想约周末徒步'));
+assert.equal((await b(`/rooms/${publicRoom.data.id}/join`,'POST',{})).status,200);
+assert.equal((await a(`/rooms/${publicRoom.data.id}/message`,'POST',{text:'私人理由：秘密口令518'})).status,200);
+assert.equal((await b(`/rooms/${publicRoom.data.id}/share`,'POST',{publicText:'我也想周末去徒步',explicitApproval:true})).status,200);
+if(process.env.EXPECT_MODEL_GUIDANCE){
+  let seen=false;
+  for(let i=0;i<160;i++){
+    const state=(await a(`/rooms/${publicRoom.data.id}`)).data;
+    if(JSON.stringify(state.bulletin?.content?.provisional??[]).includes('AI 发现两条公开想法')){seen=true;break;}
+    await new Promise(resolve=>setTimeout(resolve,250));
+  }
+  assert.ok(seen,'real model should recognize two approved hiking ideas in the shared bulletin');
+  const conflictRoom=await a('/rooms','POST',{...publicBody,title:'日期分歧讨论',idea:'周六想去徒步',publicText:'周六想去徒步',explicitApproval:true});
+  assert.equal(conflictRoom.status,201);
+  assert.equal((await b(`/rooms/${conflictRoom.data.id}/join`,'POST',{})).status,200);
+  assert.equal((await b(`/rooms/${conflictRoom.data.id}/share`,'POST',{publicText:'周六没空，只能周日去徒步',explicitApproval:true})).status,200);
+  let conflictSeen=false;
+  for(let i=0;i<160;i++){
+    const state=(await a(`/rooms/${conflictRoom.data.id}`)).data;
+    if(JSON.stringify(state.bulletin?.content?.disagreements??[]).includes('AI 发现两条公开想法可能有分歧')){conflictSeen=true;break;}
+    await new Promise(resolve=>setTimeout(resolve,250));
+  }
+  assert.ok(conflictSeen,'real model should identify the public Saturday/Sunday conflict');
+}
+assert.ok(!JSON.stringify((await b(`/rooms/${publicRoom.data.id}`)).data).includes('秘密口令518'));
 const database=new Database(path.join(process.env.DATA_DIR!,'weekend.db'),{readonly:true});
-try{assert.equal((database.prepare('SELECT count(*) AS n FROM members WHERE room_id=?').get(roomId) as {n:number}).n,2);assert.equal((database.prepare("SELECT count(*) AS n FROM room_circle_invites WHERE room_id=? AND status='accepted'").get(roomId) as {n:number}).n,2);assert.equal((database.prepare('SELECT count(*) AS n FROM proposals WHERE room_id=?').get(roomId) as {n:number}).n,0);assert.equal((database.prepare('SELECT count(*) AS n FROM room_public_shares WHERE room_id=?').get(publicRoom.data.id) as {n:number}).n,1);}finally{database.close();}
+try{assert.equal((database.prepare('SELECT count(*) AS n FROM members WHERE room_id=?').get(roomId) as {n:number}).n,2);assert.equal((database.prepare("SELECT count(*) AS n FROM room_circle_invites WHERE room_id=? AND status='accepted'").get(roomId) as {n:number}).n,2);assert.equal((database.prepare('SELECT count(*) AS n FROM proposals WHERE room_id=?').get(roomId) as {n:number}).n,0);assert.equal((database.prepare('SELECT count(*) AS n FROM room_public_shares WHERE room_id=?').get(publicRoom.data.id) as {n:number}).n,2);}finally{database.close();}
 console.log(JSON.stringify({ok:true,roomId,invited:true,outsiderDenied:true,noAutoProposal:true}));

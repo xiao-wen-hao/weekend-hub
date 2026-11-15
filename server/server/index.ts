@@ -15,6 +15,7 @@ import management from "./management";
 import notification,{enqueueNotification} from "./notification";
 import {buildBulletin,currentBulletin,refreshBulletin} from './bulletin';
 import {annotatePublicShare,recoverPublicSummaries} from './public-summary';
+import {recoverPublicGuidance,updatePublicGuidance} from './public-guidance';
 
 const app=express();
 app.set("trust proxy",1);
@@ -132,7 +133,7 @@ app.post("/api/rooms",async(req,res)=>{
     emitEvent(roomId,"initial",mode==='blank'?'讨论间已建立，大家可以先说想法，再整理共同安排。':"主持人根据发起人的想法放出了第一版草案。时间、活动和预算都可以继续商量。" );
     refreshBulletin(roomId);
   })();
-  if(shareId)void annotatePublicShare(shareId);
+  if(shareId){void annotatePublicShare(shareId);void updatePublicGuidance(roomId);}
   res.status(201).json({id:roomId});
 });
 app.get("/api/rooms/:id",(req,res)=>{
@@ -164,6 +165,7 @@ app.post('/api/rooms/:id/share',(req,res)=>{
   })();
   startBlankPlanFromPublicShares(access.room.id);
   void annotatePublicShare(shareId);
+  void updatePublicGuidance(access.room.id);
   res.json(publicRoom(access.room.id,access.user.id));
 });
 app.post("/api/rooms/:id/join",(req,res)=>{
@@ -298,4 +300,5 @@ if(prod){const dist=path.resolve("dist");app.use(express.static(dist));app.get("
 else{const vite=await createViteServer({server:{middlewareMode:true},appType:"spa"});app.use(vite.middlewares);}
 db.transaction(()=>{for(const row of db.prepare('SELECT id FROM rooms WHERE NOT EXISTS (SELECT 1 FROM room_bulletins WHERE room_id=rooms.id)').all() as {id:string}[])refreshBulletin(row.id);})();
 recoverPublicSummaries();
+recoverPublicGuidance();
 app.listen(port,"0.0.0.0",()=>{recoverPendingCoordination();console.log(`Weekend Host ready at http://localhost:${port}`);});

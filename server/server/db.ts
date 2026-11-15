@@ -108,6 +108,11 @@ CREATE INDEX idx_room_circle_invites_circle ON room_circle_invites(circle_id,use
 `;
 if(version<11){db.transaction(()=>{db.exec(migration11);db.pragma("user_version = 11");})();}
 
+const migration12=`
+CREATE TABLE room_public_guidance(room_id TEXT PRIMARY KEY REFERENCES rooms(id),source_ids_json TEXT NOT NULL,content_json TEXT NOT NULL,created_at TEXT NOT NULL);
+`;
+if(version<12){db.transaction(()=>{db.exec(migration12);db.pragma("user_version = 12");})();}
+
 export type RoomRow={id:string;title:string;date:string;mode:'blank'|'template';brief_json:string;phase:string;current_proposal_id:string|null;revision:number;coordination_pending:number;coordination_epoch:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();

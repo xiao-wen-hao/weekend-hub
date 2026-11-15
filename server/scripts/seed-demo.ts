@@ -25,7 +25,9 @@ async function client(username:string,name:string):Promise<Client>{
 const users=await Promise.all(accounts.map(a=>client(a.username,a.name)));
 const owner=users[0];
 let roomId:string,circleId:string|null=null;
-const latest=(await owner("/rooms")).rooms.find((room:{id:string;title:string;phase:string;memberCount:number})=>room.title==="桌游周末局"&&room.phase==="discussing"&&room.memberCount===4);
+const demoRooms=(await owner("/rooms")).rooms as {id:string;title:string;phase:string;memberCount:number}[];
+const latest=demoRooms.find(room=>room.title==="桌游讨论"&&room.phase!=="final"&&room.memberCount<=4)??(process.env.DEMO_COMPLETE==="1"?demoRooms.find(room=>room.title==="桌游讨论"&&room.phase==="final"&&room.memberCount===4):undefined);
+const alreadyFinal=latest?.phase==='final';
 if(latest&&process.env.DEMO_FRESH!=="1"){
   roomId=latest.id;
 }else{
@@ -36,12 +38,32 @@ if(latest&&process.env.DEMO_FRESH!=="1"){
   const candidate=candidates.find(c=>c.memberCount===4);if(!candidate)throw Error("四人候选局没有生成");
   for(const user of users)await user(`/candidates/${candidate.id}/respond`,"POST",{decision:"yes"});
   roomId=(await owner(`/candidates/${candidate.id}/open`,"POST",{})).roomId;
-  await owner(`/rooms/${roomId}/message`,"POST",{text:"我想在学校附近集合，先吃再玩，第一场桌游预算80元，聚餐人均预算120元。"});
-  await users[1](`/rooms/${roomId}/message`,"POST",{text:"我最晚21点要离开，不能吃火锅，想吃烤肉。聚餐人均最多100元。"});
+}
+if(!alreadyFinal){
+for(const user of users.slice(1)){const invited=await user(`/rooms/${roomId}`);if(!invited.joined)await user(`/rooms/${roomId}/join`,"POST",{});}
+let opening=await owner(`/rooms/${roomId}`);
+if(!opening.messages?.some((m:{body:string})=>m.body.includes('第一场桌游预算80元')))await owner(`/rooms/${roomId}/message`,"POST",{text:"我想在学校附近集合，先吃再玩，第一场桌游预算80元，聚餐人均预算120元。"});
+const second=await users[1](`/rooms/${roomId}`);
+if(!second.messages?.some((m:{body:string})=>m.body.includes('最晚21点')))await users[1](`/rooms/${roomId}/message`,"POST",{text:"我最晚21点要离开，不能吃火锅，想吃烤肉。聚餐人均最多100元。"});
+opening=await owner(`/rooms/${roomId}`);
+if(!opening.bulletin?.content?.shared?.some((s:{text:string})=>s.text.includes('周六下午想玩桌游')))await owner(`/rooms/${roomId}/share`,"POST",{publicText:"周六下午想玩桌游，学校附近集合",explicitApproval:true});
+opening=await owner(`/rooms/${roomId}`);
+if(!opening.bulletin?.content?.shared?.some((s:{text:string})=>s.text.includes('周六也想玩桌游')))await users[1](`/rooms/${roomId}/share`,"POST",{publicText:"周六也想玩桌游",explicitApproval:true});
+const waitForProposal=async()=>{for(let n=0;n<45;n++){const state=await owner(`/rooms/${roomId}`);if(state.proposal&&!state.room.coordinationPending)return state;await new Promise(resolve=>setTimeout(resolve,300));}throw Error(`房间 ${roomId} 尚未从两条公开意愿生成草案`)};
+let draft=await waitForProposal();
+for(const facet of ['budgetMeal','budgetPlay1']){
+  if(!draft.proposal.pendingFinal.some((x:string)=>x.includes(facet==='budgetMeal'?'一起吃饭预算':'玩第一场预算')))continue;
+  draft=await owner(`/rooms/${roomId}/polls`,"POST",{facet});
+  if(!draft.poll)throw Error(`${facet} 投票未发起`);
+  const option=draft.poll.options.find((x:{id:string})=>x.id==='100')??draft.poll.options[0];
+  for(const user of users)await user(`/rooms/${roomId}/polls/${draft.poll.id}/vote`,"POST",{optionId:option.id});
+  draft=await waitForProposal();
+}
 }
 const waitForPlan=async()=>{for(let n=0;n<45;n++){const state=await owner(`/rooms/${roomId}`);if(state.room.phase!=="blocked"&&!state.room.coordinationPending&&state.proposal?.pendingFinal?.length===0&&!state.poll)return state;await new Promise(resolve=>setTimeout(resolve,300));}throw Error(`房间 ${roomId} 的方案未稳定：协调未结束、存在投票或尚缺定案字段`)};
-let state=await waitForPlan();
+let state=alreadyFinal?await owner(`/rooms/${roomId}`):await waitForPlan();
 if(process.env.DEMO_COMPLETE==="1"){
+  if(!alreadyFinal){
   state=await owner(`/rooms/${roomId}/polls`,"POST",{facet:"food"});
   const poll=state.poll;if(!poll)throw Error("未发起真实投票");
   const meal=state.proposal.plan.segments.find((segment:{id:string})=>segment.id==="meal")?.category;
@@ -51,6 +73,8 @@ if(process.env.DEMO_COMPLETE==="1"){
   const proposalId=state.proposal.id;
   for(const user of users)for(const segment of state.proposal.plan.segments)await user(`/rooms/${roomId}/attendance`,"POST",{proposalId,segmentId:segment.id,decision:"yes"});
   for(const user of users)await user(`/rooms/${roomId}/confirm`,"POST",{proposalId,decision:"accept"});
+  }
+  const proposalId=state.proposal.id;
   const verify=async(expectedVersion:number,expectedId:string)=>{
     const states=await Promise.all(users.map(user=>user(`/rooms/${roomId}`)));
     const current=states[0];
