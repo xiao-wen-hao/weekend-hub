@@ -47,6 +47,7 @@ async function decide(facet:string,value:string){
   throw Error(`Coordination after ${facet} vote did not produce a new proposal`);
 }
 proposal=await decide('date','');
+assert.equal((await a(`/rooms/${roomId}`)).data.room.date,proposal.plan.date);
 proposal=await decide('budgetMeal','100');
 proposal=await decide('budgetPlay1','100');
 assert.deepEqual(proposal.pendingFinal,[]);

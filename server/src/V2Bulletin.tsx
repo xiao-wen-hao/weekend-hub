@@ -9,7 +9,7 @@ export function BulletinPanel({bulletin}:{bulletin:Bulletin|null|undefined}){
     <div className="v2-bulletin-head"><div><span className="v2-overline">大家共同看到</span><h2>这场局，聊到哪了</h2></div><span className="v2-version">公告 {bulletin?.version??0}</span></div>
     {!content?<p className="v2-muted">正在整理公开进展…</p>:<>
       {!!content.consensus.length&&<div className="v2-section"><h3>已经说定</h3>{content.consensus.map((line,i)=><p key={i}>{line}</p>)}</div>}
-      <div className="v2-section"><h3>目前的想法</h3>{content.provisional.length?content.provisional.map((line,i)=><p key={i}>{line}</p>):<p className="v2-muted">还没有公开方案。先说说你想怎么过这个周末。</p>}</div>
+      {(content.provisional.length>0||content.consensus.length===0)&&<div className="v2-section"><h3>目前的想法</h3>{content.provisional.length?content.provisional.map((line,i)=><p key={i}>{line}</p>):<p className="v2-muted">还没有公开方案。先说说你想怎么过这个周末。</p>}</div>}
       {!!content.shared.length&&<div className="v2-section"><h3>朋友主动分享</h3>{content.shared.map(x=><p key={x.id}><strong>{x.author}</strong>：{x.text}</p>)}</div>}
       {!!content.disagreements.length&&<div className="v2-section v2-divergence"><h3>还没达成一致</h3>{content.disagreements.map((x,i)=><p key={i}>{x}</p>)}</div>}
       {!!content.pending.length&&<div className="v2-section"><h3>下一步</h3>{content.pending.map((x,i)=><p key={i}>{x}</p>)}</div>}

@@ -81,6 +81,7 @@ if(process.env.DEMO_COMPLETE==="1"){
     if(current.room.phase!=="final")throw Error(`房间未保持 final，当前阶段：${current.room.phase}`);
     if(current.room.coordinationPending)throw Error("定案后仍有待处理协调任务");
     if(current.proposal.id!==expectedId||current.proposal.version!==expectedVersion)throw Error(`当前方案从 v${expectedVersion}/${expectedId} 变为 v${current.proposal.version}/${current.proposal.id}`);
+    if(current.room.date!==current.proposal.plan.date)throw Error(`房间日期 ${current.room.date} 与当前方案日期 ${current.proposal.plan.date} 不一致`);
     if(current.proposal.confirmed!==4)throw Error(`当前方案确认数为 ${current.proposal.confirmed}，预期 4`);
     const members=new Set(current.members.map((member:{id:string})=>member.id));
     const segments=current.proposal.plan.segments.map((segment:{id:string})=>segment.id);

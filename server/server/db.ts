@@ -113,6 +113,13 @@ CREATE TABLE room_public_guidance(room_id TEXT PRIMARY KEY REFERENCES rooms(id),
 `;
 if(version<12){db.transaction(()=>{db.exec(migration12);db.pragma("user_version = 12");})();}
 
+const migration13=`
+UPDATE rooms SET date=(SELECT json_extract(p.plan_json,'$.date') FROM proposals p WHERE p.id=rooms.current_proposal_id)
+WHERE date='待定' AND current_proposal_id IS NOT NULL
+AND (SELECT json_extract(p.plan_json,'$.date') FROM proposals p WHERE p.id=rooms.current_proposal_id) GLOB '????-??-??';
+`;
+if(version<13){db.transaction(()=>{db.exec(migration13);db.pragma("user_version = 13");})();}
+
 export type RoomRow={id:string;title:string;date:string;mode:'blank'|'template';brief_json:string;phase:string;current_proposal_id:string|null;revision:number;coordination_pending:number;coordination_epoch:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();

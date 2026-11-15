@@ -58,7 +58,7 @@ export function startBlankPlanFromPublicShares(roomId:string){
   const saturday=nextSaturdayShanghai(),sunday=new Date(`${saturday}T00:00:00Z`);sunday.setUTCDate(sunday.getUTCDate()+1);
   const date=/周六|星期六/.test(publicText)&&!/周日|星期日|星期天/.test(publicText)?saturday:/周日|星期日|星期天/.test(publicText)&&!/周六|星期六/.test(publicText)?sunday.toISOString().slice(0,10):'待定';
   const next={...brief,date,area:areas.length===1?areas[0]:'',food:food??'简餐',play:play??'散步聊天',timeWindow:windowId??'unsure'};
-  const changed=db.prepare("UPDATE rooms SET brief_json=?,revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,phase='discussing',updated_at=? WHERE id=? AND mode='blank' AND current_proposal_id IS NULL AND coordination_pending=0 AND phase!='final'").run(JSON.stringify(next),now(),roomId);
+  const changed=db.prepare("UPDATE rooms SET brief_json=?,date=?,revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,phase='discussing',updated_at=? WHERE id=? AND mode='blank' AND current_proposal_id IS NULL AND coordination_pending=0 AND phase!='final'").run(JSON.stringify(next),date,now(),roomId);
   if(changed.changes){scheduleRoom(roomId);return true;}return false;
 }
 export function coordinateRoom(roomId:string,expected:CoordinationSnapshot|null=pendingSnapshot(roomId)){
