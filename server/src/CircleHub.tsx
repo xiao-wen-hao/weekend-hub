@@ -24,11 +24,11 @@ function CircleDiscussions({id,onBack,onOpenRoom}:{id:string;onBack:()=>void;onO
   return <section className="circle-hub circle-discussions"><button className="circle-link" onClick={onBack}>← 返回圈子</button><div className="circle-hub-title"><div><p className="eyebrow">CIRCLE HUDDLES</p><h2>圈内讨论</h2><p>正在商量、等待回应与已经定案的局。</p></div></div>{error&&<p className="circle-alert error">{error}</p>}{loading?<p className="circle-muted">正在加载讨论…</p>:<><h3>正在进行 · {active.length}</h3><div className="circle-list-grid">{active.length?active.map(card):<p className="circle-muted">目前没有进行中的讨论。</p>}</div><h3>等待回应 · {waiting.length}</h3><div className="circle-list-grid">{waiting.length?waiting.map(c=><button className="circle-list-card" key={c.id} onClick={onBack}><strong>{c.category} · {c.memberCount} 人的相近意愿</strong><span>{c.yesCount} 人愿意讨论 · 回圈子回应 →</span></button>):<p className="circle-muted">目前没有待回应的候选局。</p>}</div><h3>已经定案 · {finished.length}</h3><div className="circle-list-grid">{finished.length?finished.map(card):<p className="circle-muted">还没有定案的讨论。</p>}</div></>}</section>;
 }
 
-export default function CircleHub({onOpenRoom,onNavigateCircle,onBack,userId,initialCircleId,view}:{onOpenRoom:(id:string)=>void;onNavigateCircle:(id:string,view?:'detail'|'discussions')=>void;onBack:()=>void;userId:string;initialCircleId:string|null;view:'detail'|'discussions'}){
+export default function CircleHub({onOpenRoom,onNavigateCircle,onBack,userId,initialCircleId,initialIdea,view}:{onOpenRoom:(id:string)=>void;onNavigateCircle:(id:string,view?:'detail'|'discussions')=>void;onBack:()=>void;userId:string;initialCircleId:string|null;initialIdea?:string;view:'detail'|'discussions'}){
   const [circles,setCircles]=useState<Circle[]>([]),[selected,setSelected]=useState<string|null>(initialCircleId);
   const [members,setMembers]=useState<Member[]>([]),[intents,setIntents]=useState<Intent[]>([]),[candidates,setCandidates]=useState<Candidate[]>([]);
   const [circleName,setCircleName]=useState(""),[joinCode,setJoinCode]=useState(""),[newCode,setNewCode]=useState("");
-  const [text,setText]=useState(""),[category,setCategory]=useState(""),[windowId,setWindowId]=useState(""),[preview,setPreview]=useState<Preview|null>(null);
+  const [text,setText]=useState(initialIdea??""),[category,setCategory]=useState(""),[windowId,setWindowId]=useState(""),[preview,setPreview]=useState<Preview|null>(null);
   const [matchAllowed,setMatchAllowed]=useState(false),[contactAllowed,setContactAllowed]=useState(false),[editingId,setEditingId]=useState<string|null>(null);
   const matchReason=(raw:string|null|undefined)=>{try{return raw?(JSON.parse(raw) as {summary?:string}).summary??"":null}catch{return null}};
   const [message,setMessage]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false);
@@ -40,6 +40,7 @@ export default function CircleHub({onOpenRoom,onNavigateCircle,onBack,userId,ini
   useEffect(()=>{void loadCircles().catch(e=>setError(String(e)));},[loadCircles]);
   useEffect(()=>{void loadNotices().catch(()=>{});const timer=setInterval(()=>void loadNotices().catch(()=>{}),10000);return()=>clearInterval(timer);},[loadNotices]);
   useEffect(()=>{if(selected)void loadDetails(selected).catch(e=>setError(String(e)));},[selected,loadDetails]);
+  useEffect(()=>{if(!initialCircleId||!initialIdea)return;let active=true;void call<Preview>('/intents/preview','POST',{text:initialIdea}).then(x=>{if(active){setPreview(x);setCategory(x.category??'');setWindowId(x.windowId??'');}}).catch(e=>{if(active)setError(e instanceof Error?e.message:'理解意愿失败');});return()=>{active=false;};},[initialCircleId,initialIdea]);
   const run=async(action:()=>Promise<void>,success:string)=>{setBusy(true);setError("");setMessage("");try{await action();await loadNotices();setMessage(success);}catch(e){setError(e instanceof Error?e.message:"操作失败");}finally{setBusy(false);}};
   const clearForm=()=>{setEditingId(null);setText("");setCategory("");setWindowId("");setPreview(null);setMatchAllowed(false);setContactAllowed(false);};
   const startEdit=(intent:Intent)=>{setEditingId(intent.id);setText(intent.rawText);setCategory(intent.category??"");setWindowId(intent.windowId??"");setMatchAllowed(!!intent.matchAllowed);setContactAllowed(!!intent.contactAllowed);setPreview(null);};

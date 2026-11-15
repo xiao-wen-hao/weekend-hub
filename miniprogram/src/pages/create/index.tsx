@@ -1,5 +1,5 @@
 import {useState} from 'react'
-import Taro,{useDidShow} from '@tarojs/taro'
+import Taro,{useDidShow,useRouter} from '@tarojs/taro'
 import {Button,Input,Picker,Text,Textarea,View} from '@tarojs/components'
 import {api,ApiError,backHome,requireLogin} from '../../api'
 
@@ -8,8 +8,9 @@ const plays=['桌游','KTV','电影','剧本杀','密室逃脱','保龄球','逛
 const nextSaturday=()=>{const d=new Date();d.setDate(d.getDate()+((6-d.getDay()+7)%7||7));return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 
 export default function Create(){
-  useDidShow(()=>{requireLogin('/pages/create/index')})
-  const [mode,setMode]=useState<'blank'|'template'>('blank'),[idea,setIdea]=useState(''),[title,setTitle]=useState(''),[date,setDate]=useState(nextSaturday()),[window,setWindow]=useState('unsure'),[food,setFood]=useState(foods[0]),[play,setPlay]=useState(plays[0]),[area,setArea]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('')
+  const draft=useRouter().params.draft||''
+  useDidShow(()=>{requireLogin(`/pages/create/index${draft?`?draft=${encodeURIComponent(draft)}`:''}`)})
+  const [mode,setMode]=useState<'blank'|'template'>('blank'),[idea,setIdea]=useState(draft),[title,setTitle]=useState(''),[date,setDate]=useState(nextSaturday()),[window,setWindow]=useState('unsure'),[food,setFood]=useState(foods[0]),[play,setPlay]=useState(plays[0]),[area,setArea]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const create=async()=>{setBusy(true);setError('');try{const body={mode,idea:mode==='blank'?idea.trim():'',title:mode==='blank'?title.trim()||'周末讨论':title.trim(),date,timeWindow:window,area:mode==='template'?area:'',food,play,secondPlay:null,rounds:1,order:'either',after:false,budget:{meal:null,play1:null,play2:null,after:null},note:''};const result=await api<{id:string}>('/rooms','POST',body);await Taro.redirectTo({url:`/pages/room/index?id=${result.id}`})}catch(e){if(e instanceof ApiError&&e.status===401)requireLogin('/pages/create/index');else setError(e instanceof Error?e.message:'创建失败')}finally{setBusy(false)}}
   return <View className='page'><Text className='back' onClick={backHome}>‹ 返回</Text><Text className='eyebrow'>START A HUDDLE</Text><Text className='page-title'>先说一句，再慢慢商量</Text><Text className='muted'>你可以空白开始，也可以用活动模板快速放出草案。</Text>
     <View className='choice-row'><Text className={mode==='blank'?'choice selected':'choice'} onClick={()=>setMode('blank')}>空白讨论</Text><Text className={mode==='template'?'choice selected':'choice'} onClick={()=>setMode('template')}>活动模板</Text></View>

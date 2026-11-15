@@ -4,9 +4,9 @@ import {Button,Input,Text,Textarea,View} from '@tarojs/components'
 import {api,ApiError,backHome,circlePath,foods,plays,Preview,requireLogin,times,Intent} from '../../api'
 
 export default function IntentPage(){
-  const route=useRouter(),circleId=route.params.circleId||'',intentId=route.params.intentId||''
-  const target=`/pages/intent/index?circleId=${encodeURIComponent(circleId)}${intentId?`&intentId=${encodeURIComponent(intentId)}`:''}`
-  const [text,setText]=useState(''),[category,setCategory]=useState(''),[windowId,setWindowId]=useState(''),[preview,setPreview]=useState<Preview|null>(null),[match,setMatch]=useState(false),[contact,setContact]=useState(false)
+  const route=useRouter(),circleId=route.params.circleId||'',intentId=route.params.intentId||'',draft=route.params.draft||''
+  const target=`/pages/intent/index?circleId=${encodeURIComponent(circleId)}${intentId?`&intentId=${encodeURIComponent(intentId)}`:''}${draft?`&draft=${encodeURIComponent(draft)}`:''}`
+  const [text,setText]=useState(draft),[category,setCategory]=useState(''),[windowId,setWindowId]=useState(''),[preview,setPreview]=useState<Preview|null>(null),[match,setMatch]=useState(false),[contact,setContact]=useState(false)
   const matchRef=useRef(false),contactRef=useRef(false)
   const [loading,setLoading]=useState(!!intentId),[busy,setBusy]=useState(false),[error,setError]=useState('')
   useDidShow(()=>{if(requireLogin(target)||!intentId)return;void (async()=>{setLoading(true);try{const result=await api<{intents:Intent[]}>(`/circles/${circleId}/intents`);const i=result.intents.find(x=>x.id===intentId);if(!i)throw Error('意愿不存在');setText(i.rawText);setCategory(i.category||'');setWindowId(i.windowId||'');matchRef.current=!!i.matchAllowed;contactRef.current=!!i.contactAllowed;setMatch(matchRef.current);setContact(contactRef.current);setError('')}catch(e){if(e instanceof ApiError&&e.status===401){requireLogin(target);return}setError(e instanceof Error?e.message:'读取失败')}finally{setLoading(false)}})()})
