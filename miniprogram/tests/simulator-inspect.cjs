@@ -1,0 +1,2 @@
+const automator=require('miniprogram-automator');
+(async()=>{const mini=await automator.connect({wsEndpoint:process.env.WEAPP_AUTOMATOR_URL||'ws://127.0.0.1:9420'});try{const page=await mini.currentPage();const root=await page.$('.room-page');console.log(JSON.stringify({path:page.path,question:!!(await page.$('.coordination-input')),text:root?(await root.text()).slice(0,800):null}));if(process.env.TEST_SCREENSHOT)await mini.screenshot({path:process.env.TEST_SCREENSHOT});}finally{await mini.disconnect();}})().catch(error=>{console.error(error);process.exitCode=1;});

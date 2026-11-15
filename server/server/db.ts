@@ -132,6 +132,19 @@ if(version<14){db.transaction(()=>{db.exec(migration14);db.pragma("user_version 
 
 if(version<15){db.transaction(()=>{db.exec("ALTER TABLE members ADD COLUMN decision_status TEXT NOT NULL DEFAULT 'undecided' CHECK(decision_status IN ('undecided','yes','no')); UPDATE members SET decision_status='yes';");db.pragma("user_version = 15");})();}
 
+// Internal semantic analysis is deliberately separate from the public bulletin.
+// Private source text and member-level conflicts must never be projected into it.
+const migration16=`
+CREATE TABLE room_semantic_analysis(room_id TEXT PRIMARY KEY REFERENCES rooms(id),input_signature TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending','running','ready','unavailable')),content_json TEXT,updated_at TEXT NOT NULL);
+CREATE TABLE room_coordination_questions(id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id),user_id TEXT NOT NULL REFERENCES users(id),analysis_signature TEXT NOT NULL,conflict_key TEXT NOT NULL,question TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending','answered','obsolete')),answer_message_id TEXT REFERENCES messages(id),created_at TEXT NOT NULL,answered_at TEXT);
+CREATE INDEX idx_room_coordination_questions_target ON room_coordination_questions(room_id,user_id,status);
+`;
+if(version<16){db.transaction(()=>{db.exec(migration16);db.pragma("user_version = 16");})();}
+
+// A candidate can connect different structured categories when the model
+// finds the same underlying activity. Existing candidates keep legacy checks.
+if(version<17){db.transaction(()=>{db.exec('ALTER TABLE candidate_members ADD COLUMN intent_id TEXT REFERENCES intents(id);');db.pragma('user_version = 17');})();}
+
 export type RoomRow={id:string;title:string;date:string;mode:'blank'|'template';brief_json:string;phase:string;current_proposal_id:string|null;revision:number;coordination_pending:number;coordination_epoch:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();

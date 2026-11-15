@@ -1,0 +1,9 @@
+.coordination-card{margin:14px 14px 18px;padding:16px;border:1px solid #cbdcbe;border-radius:15px;background:#f5faef;color:#425d49;box-shadow:0 8px 24px rgba(35,68,43,.05)}
+.coordination-card.quiet{font-size:12px;line-height:1.65;background:#f8faf5;color:#718273}
+.coordination-kicker{display:block;color:#5f875d;font-size:11px;font-weight:800;letter-spacing:.03em}
+.coordination-card p{font-size:14px;font-weight:700;line-height:1.6;margin:9px 0 13px}
+.coordination-card form{display:flex;gap:8px}.coordination-card input{flex:1;min-width:0;border:1px solid #d4e0cf;border-radius:10px;background:#fff;padding:11px;font:inherit;font-size:12px}.coordination-card button{border:0;border-radius:10px;background:#466c4f;color:#fff;padding:0 17px;font-weight:700}.coordination-card button:disabled{opacity:.5}
+.coordination-card small{display:block;margin-top:9px;font-size:10px;color:#819180;line-height:1.5}
+.coordination-board-link{display:block;width:100%;margin:12px 0;padding:14px 16px;border:1px solid #cbdcbe;border-radius:12px;background:#f5faef;color:#456b4e;text-align:left;font-weight:800;cursor:pointer}
+.coordination-plan-ideas{margin:15px 0;padding:17px;border:1px solid #dce9d5;border-radius:15px;background:#fff}.coordination-plan-ideas strong{color:#48694d;font-size:13px}.coordination-plan-ideas p{font-size:11px;color:#829183;line-height:1.6}.coordination-plan-option{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid #edf2e9;font-size:12px}.coordination-plan-option button{border:0;border-radius:9px;padding:9px 12px;background:#e7f1df;color:#47704c;font-weight:700;cursor:pointer}
+@media(max-width:480px){.coordination-card form{flex-direction:column}.coordination-card button{padding:11px}}
