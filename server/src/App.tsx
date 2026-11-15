@@ -56,10 +56,10 @@ export default function App(){
   useEffect(()=>{
     if(!isNativeClient)return;
     let alive=true;let back:{remove:()=>Promise<void>}|undefined;
-    void CapacitorApp.addListener("backButton",()=>{if(document.body.classList.contains("keyboard-open")||document.activeElement instanceof HTMLInputElement||document.activeElement instanceof HTMLTextAreaElement){(document.activeElement as HTMLElement|null)?.blur();void Keyboard.hide();}else if(roomId)navigate(null);else void CapacitorApp.exitApp();}).then(handle=>{if(alive)back=handle;else void handle.remove();});
+    void CapacitorApp.addListener("backButton",()=>{if(document.body.classList.contains("keyboard-open")||document.activeElement instanceof HTMLInputElement||document.activeElement instanceof HTMLTextAreaElement){(document.activeElement as HTMLElement|null)?.blur();void Keyboard.hide();}else if(roomId||circleId)navigate(null);else void CapacitorApp.exitApp();}).then(handle=>{if(alive)back=handle;else void handle.remove();});
     void StatusBar.setStyle({style:Style.Light}).catch(()=>{});
     return()=>{alive=false;void back?.remove();};
-  },[roomId]);
+  },[roomId,circleId]);
   useEffect(()=>{
     if(!isNativeClient)return;
     let alive=true;let show:{remove:()=>Promise<void>}|undefined;let hide:{remove:()=>Promise<void>}|undefined;
