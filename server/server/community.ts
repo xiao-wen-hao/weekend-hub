@@ -9,6 +9,7 @@ import { interpretIntent } from "./intent-parser";
 import { nextSaturdayShanghai } from "../shared/calendar";
 import { enqueueNotification } from "./notification";
 import {refreshBulletin} from "./bulletin";
+import {assessMatch} from './semantic-match';
 
 const router=Router();
 
@@ -19,7 +20,7 @@ function expireCandidates(circleId?:string){
   if(circleId)db.prepare("UPDATE candidates SET status='expired' WHERE circle_id=? AND status='probing' AND expires_at<=?").run(circleId,now());
   else db.prepare("UPDATE candidates SET status='expired' WHERE status='probing' AND expires_at<=?").run(now());
 }
-function discover(circleId:string){
+async function discover(circleId:string){
   expireCandidates(circleId);
   const rows=db.prepare("SELECT i.* FROM intents i JOIN circle_members cm ON cm.circle_id=i.circle_id AND cm.user_id=i.owner_id AND cm.status='active' WHERE i.circle_id=? AND i.status='active' AND i.confirmed_at IS NOT NULL AND i.match_allowed=1 AND i.contact_allowed=1 AND i.expires_at>? ORDER BY i.created_at DESC").all(circleId,now()) as any[];
   const byCategory=new Map<string,any[]>();for(const row of rows){if(!row.category)continue;byCategory.set(row.category,[...(byCategory.get(row.category)??[]),row]);}
@@ -29,10 +30,16 @@ function discover(circleId:string){
     let chosen:{windowId:string;members:any[];explicit:number}|null=null;
     for(const windowId of windows){const unique=[...new Map(items.filter(i=>!i.window_id||i.window_id===windowId).reverse().map(i=>[i.owner_id,i])).values()].slice(0,10);const explicit=unique.filter(i=>i.window_id===windowId).length;if(unique.length>=2&&(!chosen||unique.length>chosen.members.length||unique.length===chosen.members.length&&explicit>chosen.explicit))chosen={windowId,members:unique,explicit};}
     if(!chosen)continue;
+    const assessment=await assessMatch(chosen.members.map(i=>String(i.raw_text)));
+    if(!assessment.related)continue;
+    // The model may take seconds. Never publish a candidate based on revoked
+    // consent, changed category, or a member who left during that call.
+    const stillEligible=chosen.members.every(i=>db.prepare("SELECT 1 FROM intents i JOIN circle_members m ON m.circle_id=i.circle_id AND m.user_id=i.owner_id AND m.status='active' WHERE i.id=? AND i.circle_id=? AND i.status='active' AND i.confirmed_at IS NOT NULL AND i.match_allowed=1 AND i.contact_allowed=1 AND i.category=? AND (i.window_id IS NULL OR i.window_id=?) AND i.expires_at>?").get(i.id,circleId,category,chosen.windowId,now()));
+    if(!stillEligible)continue;
     const users=chosen.members.map(x=>x.owner_id).sort();
     const memberKey=crypto.createHash('sha256').update(`${circleId}|${category}|${chosen.windowId}|${users.join(',')}|${Math.floor(Date.now()/(7*86400000))}`).digest('hex');
     const areas=[...new Set(chosen.members.map(i=>{try{return JSON.parse(i.parsed_json||'{}').area as string|null}catch{return null}}).filter(Boolean))];
-    const reason={activity:category,time:chosen.windowId==='unsure'?'时间待商量':chosen.windowId,summary:`圈内 ${users.length} 位成员的活动意愿相近${chosen.windowId==='unsure'?'，具体时段待商量':'，时间范围可协调'}${areas.length>1?'；区域尚需商量':''}。只有明确回应后才会开局。`};
+    const reason={activity:category,time:chosen.windowId==='unsure'?'时间待商量':chosen.windowId,source:assessment.source,summary:`圈内 ${users.length} 位成员的活动意愿相近${chosen.windowId==='unsure'?'，具体时段待商量':'，时间范围可协调'}${areas.length>1?'；区域尚需商量':''}。只有明确回应后才会开局。`};
     db.transaction(()=>{const id=uid();const result=db.prepare("INSERT OR IGNORE INTO candidates(id,circle_id,category,window_id,status,member_key,created_at,expires_at,match_reason_json) VALUES(?,?,?,?,'probing',?,?,?,?)").run(id,circleId,category,chosen.windowId,memberKey,now(),new Date(Date.now()+48*3600000).toISOString(),JSON.stringify(reason));if(result.changes)for(const userId of users){db.prepare("INSERT INTO candidate_members(candidate_id,user_id,response) VALUES(?,?,'pending')").run(id,userId);enqueueNotification(userId,'candidate',{circleId,candidateId:id,category,windowId:chosen.windowId},`candidate:${id}:${userId}`);}})();
   }
 }
@@ -45,7 +52,7 @@ router.post("/circles/:id/intents",async (req,res)=>{const u=auth(req,res);if(!u
 if(confirmed&&!category)return res.status(400).json({error:"请确认想做的活动后再投递"});
 const id=uid(),stamp=now(),expiresAt=new Date(Date.now()+14*86400000).toISOString();
 db.prepare("INSERT INTO intents(id,circle_id,owner_id,raw_text,category,window_id,status,match_allowed,contact_allowed,expires_at,created_at,parsed_json,confirmed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id,req.params.id,u.id,rawText,category,windowId,confirmed?"active":"paused",matchAllowed,contactAllowed,expiresAt,stamp,JSON.stringify(parsed),confirmed?stamp:null);
-if(confirmed)discover(req.params.id);
+if(confirmed)await discover(req.params.id);
 res.status(201).json({id,rawText,category,windowId,status:confirmed?"active":"paused",confirmedAt:confirmed?stamp:null,evidence:parsed.evidence,source:parsed.source,matchAllowed:!!matchAllowed,contactAllowed:!!contactAllowed,expiresAt});});
 router.patch("/intents/:id",async (req,res)=>{
   const u=auth(req,res);if(!u)return;
@@ -80,7 +87,7 @@ router.patch("/intents/:id",async (req,res)=>{
       if(possible.count<2)db.prepare("UPDATE candidates SET status='closed' WHERE id=? AND status='probing'").run(c.id);
     }
   })();
-  discover(row.circle_id);
+  await discover(row.circle_id);
   res.json({id:row.id,rawText,category,windowId,status,confirmedAt,matchAllowed:!!matchAllowed,contactAllowed:!!contactAllowed});
 });
 router.post("/intents/:id/withdraw",(req,res)=>{const u=auth(req,res);if(!u)return;const row=db.prepare("SELECT circle_id FROM intents WHERE id=? AND owner_id=?").get(req.params.id,u.id) as {circle_id:string}|undefined;if(!row)return res.status(404).json({error:"意愿不存在"});db.transaction(()=>{db.prepare("UPDATE intents SET status='withdrawn' WHERE id=?").run(req.params.id);db.prepare("UPDATE candidate_members SET response='withdrawn' WHERE user_id=? AND candidate_id IN (SELECT id FROM candidates WHERE circle_id=? AND status='probing')").run(u.id,row.circle_id);db.prepare("UPDATE candidates SET status='closed' WHERE circle_id=? AND status='probing' AND (SELECT COUNT(*) FROM candidate_members WHERE candidate_id=candidates.id AND response IN ('pending','yes','later'))<2").run(row.circle_id);})();res.json({ok:true});});
