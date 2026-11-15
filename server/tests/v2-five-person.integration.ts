@@ -31,4 +31,4 @@ if(process.env.EXPECT_MODEL_GUIDANCE){let seen=false;for(let i=0;i<160;i++){cons
 const database=new Database(path.join(process.env.DATA_DIR!,'weekend.db'),{readonly:true});
 try{assert.equal((database.prepare('SELECT COUNT(*) AS n FROM members WHERE room_id=?').get(roomId) as {n:number}).n,4);assert.equal((database.prepare('SELECT COUNT(*) AS n FROM members WHERE room_id=? AND decision_status=\'undecided\'').get(roomId) as {n:number}).n,4);assert.equal((database.prepare('SELECT COUNT(*) AS n FROM attendance WHERE proposal_id IN (SELECT id FROM proposals WHERE room_id=?)').get(roomId) as {n:number}).n,0);}
 finally{database.close();}
-console.log(JSON.stringify({ok:true,roomId,circleId:circle.id,matched:4,unrelatedExcluded:true,privateIsolated:true,matchSource:reason.source,modelConflictChecked:!!process.env.EXPECT_MODEL_GUIDANCE}));
+console.log(JSON.stringify({ok:true,roomId,circleId:circle.id,accounts:Array.from({length:5},(_,i)=>`five_${stamp}_${i}`),password:'test-password-123',matched:4,unrelatedExcluded:true,privateIsolated:true,matchSource:reason.source,modelConflictChecked:!!process.env.EXPECT_MODEL_GUIDANCE}));
