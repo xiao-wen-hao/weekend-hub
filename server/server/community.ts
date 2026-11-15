@@ -117,7 +117,8 @@ router.post("/candidates/:id/open",(req,res)=>{
     if(!claimed.changes)throw Error('candidate_already_opened');
     db.prepare("INSERT INTO members(room_id,user_id,joined_at) VALUES(?,?,?)").run(roomId,u.id,stamp);
     db.prepare("INSERT INTO preferences(room_id,user_id,data_json,updated_at) VALUES(?,?,'{}',?)").run(roomId,u.id,stamp);
-    for(const x of invitees)enqueueNotification(x.userId,'discussion_invite',{roomId,candidateId:c.id,circleId:c.circle_id,category:c.category},`discussion_invite:${roomId}:${x.userId}`);
+    db.prepare("INSERT INTO room_circle_invites(room_id,circle_id,user_id,status,invited_by,created_at) VALUES(?,?,?,'accepted',?,?)").run(roomId,c.circle_id,u.id,u.id,stamp);
+    for(const x of invitees){db.prepare("INSERT INTO room_circle_invites(room_id,circle_id,user_id,status,invited_by,created_at) VALUES(?,?,?,'pending',?,?)").run(roomId,c.circle_id,x.userId,u.id,stamp);enqueueNotification(x.userId,'discussion_invite',{roomId,candidateId:c.id,circleId:c.circle_id,category:c.category,inviter:u.display_name,roomTitle:c.category+'讨论'},`discussion_invite:${roomId}:${x.userId}`);}
   })();refreshBulletin(roomId);res.status(201).json({roomId,invited:invitees.length});
 });
 export default router;

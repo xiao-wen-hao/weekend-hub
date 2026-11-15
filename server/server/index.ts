@@ -36,7 +36,7 @@ app.use((req,res,next)=>{
 });
 const fail=(res:express.Response,message:string,status=400)=>res.status(status).json({error:message});
 const userOrFail=(req:express.Request,res:express.Response)=>{const user=currentUser(req);if(!user)fail(res,"请先登录",401);return user;};
-const roomMember=(req:express.Request,res:express.Response)=>{const user=userOrFail(req,res);if(!user)return null;const room=getRoom(String(req.params.id));if(!room){fail(res,"讨论间不存在",404);return null;}if(!isMember(room.id,user.id)){fail(res,"请先加入讨论间",403);return null;}return {user,room};};
+const roomMember=(req:express.Request,res:express.Response)=>{const user=userOrFail(req,res);if(!user)return null;const room=getRoom(String(req.params.id));if(!room){fail(res,"讨论间不存在",404);return null;}if(!isMember(room.id,user.id)){fail(res,"请先加入讨论间",403);return null;}const circle=db.prepare('SELECT circle_id FROM room_circle_invites WHERE room_id=? LIMIT 1').get(room.id) as {circle_id:string}|undefined;if(circle&&!db.prepare("SELECT 1 FROM circle_members WHERE circle_id=? AND user_id=? AND status='active'").get(circle.circle_id,user.id)){fail(res,'已离开所属熟人圈',403);return null;}return {user,room};};
 
 function validateBrief(raw:unknown,allowUndecidedDate=false):Brief|null{
   if(!raw||typeof raw!=="object")return null;
@@ -68,14 +68,30 @@ function publicRoom(roomId:string,userId:string){
   const question=room.phase==="blocked"&&targeted?.userId===userId?targeted.question:null;
   const messages=db.prepare("SELECT id,role,body,created_at AS createdAt FROM messages WHERE room_id=? AND user_id=? ORDER BY created_at,id LIMIT 120").all(roomId,userId);
   const events=db.prepare("SELECT id,event_type AS type,public_text AS text,created_at AS createdAt FROM room_events WHERE room_id=? ORDER BY created_at DESC LIMIT 15").all(roomId).reverse();
-  const confirmations=proposal?db.prepare("SELECT user_id,decision FROM confirmations WHERE proposal_id=?").all(proposal.id) as {user_id:string;decision:string}[]:[];
+  const decisionRows=db.prepare("SELECT user_id,decision_status FROM members WHERE room_id=?").all(roomId) as {user_id:string;decision_status:string}[];
+  const decisionStatus=(id:string)=>decisionRows.find(x=>x.user_id===id)?.decision_status??'undecided';
+  const confirmations=proposal?db.prepare("SELECT c.user_id,c.decision FROM confirmations c JOIN members m ON m.room_id=? AND m.user_id=c.user_id AND m.decision_status='yes' WHERE c.proposal_id=?").all(roomId,proposal.id) as {user_id:string;decision:string}[]:[];
   const attendance=proposal?db.prepare("SELECT a.segment_id AS segmentId,a.user_id AS userId,u.display_name AS name,a.decision FROM attendance a JOIN users u ON u.id=a.user_id WHERE a.proposal_id=?").all(proposal.id):[];
   const bulletin=currentBulletin(roomId)??(buildBulletin(roomId)?{id:null,version:0,...buildBulletin(roomId)!}:null);
   return {joined:true,room:{id:room.id,title:room.title,date:room.date,mode:room.mode,phase:room.phase,hostId:room.created_by,revision:room.revision,coordinationPending:!!room.coordination_pending},brief:room.mode==='blank'?null:brief,bulletin,
-    members:members.map(m=>({id:m.userId,name:m.name,hasAnswered:Object.keys(m.preference).length>0||!!db.prepare("SELECT 1 FROM messages WHERE room_id=? AND user_id=? AND role='user' LIMIT 1").get(roomId,m.userId)})),
+    members:members.map(m=>({id:m.userId,name:m.name,decisionStatus:decisionStatus(m.userId),hasAnswered:Object.keys(m.preference).length>0||!!db.prepare("SELECT 1 FROM messages WHERE room_id=? AND user_id=? AND role='user' LIMIT 1").get(roomId,m.userId)})),
     me:{id:userId,preference:own},messages,events,question,
-    proposal:proposal&&room.phase!=="blocked"?{...proposal,confirmed:confirmations.filter(c=>c.decision==="accept").length,confirmations:members.map(m=>({userId:m.userId,name:m.name,decision:confirmations.find(c=>c.user_id===m.userId)?.decision??null})),myDecision:confirmations.find(c=>c.user_id===userId)?.decision??null,attendance,pendingFinal:finalizationMissing(proposal.plan)}:null,
+    proposal:proposal&&room.phase!=="blocked"?{...proposal,confirmed:confirmations.filter(c=>c.decision==="accept").length,required:decisionRows.filter(x=>x.decision_status==='yes').length,undecided:decisionRows.filter(x=>x.decision_status==='undecided').length,confirmations:members.filter(m=>decisionStatus(m.userId)==='yes').map(m=>({userId:m.userId,name:m.name,decision:confirmations.find(c=>c.user_id===m.userId)?.decision??null})),myDecision:confirmations.find(c=>c.user_id===userId)?.decision??null,attendance,pendingFinal:finalizationMissing(proposal.plan)}:null,
     poll:poll?{id:poll.id,facet:poll.facet,question:poll.question,options:(JSON.parse(poll.options_json) as {id:string;label:string;value:string|number}[]).map(o=>({...o,votes:pollVotes.find(v=>v.option_id===o.id)?.n??0})),myVote}:null};
+}
+
+function finalizeIfReady(roomId:string){
+  const room=getRoom(roomId),proposal=currentPlan(roomId);
+  if(!room||!proposal||room.phase==='final'||room.phase==='closed'||room.phase==='blocked'||room.coordination_pending||activePoll(roomId)||finalizationMissing(proposal.plan).length)return;
+  const counts=db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN decision_status='yes' THEN 1 ELSE 0 END) AS required,SUM(CASE WHEN decision_status='undecided' THEN 1 ELSE 0 END) AS undecided FROM members WHERE room_id=?").get(roomId) as {total:number;required:number;undecided:number};
+  const accepted=(db.prepare("SELECT COUNT(*) AS n FROM confirmations c JOIN members m ON m.user_id=c.user_id AND m.room_id=? AND m.decision_status='yes' WHERE c.proposal_id=? AND c.decision='accept'").get(roomId,proposal.id) as {n:number}).n;
+  if(counts.required<2||counts.undecided||accepted!==counts.required)return;
+  const changed=db.prepare("UPDATE rooms SET phase='final',updated_at=? WHERE id=? AND current_proposal_id=? AND coordination_pending=0 AND phase!='final'").run(now(),roomId,proposal.id);
+  if(!changed.changes)throw Error('confirmation_version_changed');
+  db.prepare("UPDATE room_circle_invites SET status='expired',decided_at=? WHERE room_id=? AND status='pending'").run(now(),roomId);
+  db.prepare("UPDATE notification_outbox SET status='expired',delivered_at=COALESCE(delivered_at,?) WHERE kind='discussion_invite' AND json_extract(payload_json,'$.roomId')=? AND status='pending'").run(now(),roomId);
+  emitEvent(roomId,'final','所有决策参与者都确认了同一版方案，这场聚会正式定案。');
+  for(const member of getMembers(roomId))enqueueNotification(member.userId,'room_final',{roomId,version:proposal.version},`final:${roomId}:${proposal.version}:${member.userId}`);
 }
 
 app.get("/api/health",(_req,res)=>res.json({ok:true}));
@@ -121,10 +137,10 @@ app.post("/api/rooms",async(req,res)=>{
     db.prepare("INSERT INTO members(room_id,user_id,joined_at) VALUES(?,?,?)").run(roomId,user.id,stamp);
     db.prepare("INSERT INTO preferences(room_id,user_id,data_json,updated_at) VALUES(?,?,'{}',?)").run(roomId,user.id,stamp);
     if(circleId){
-      db.prepare("INSERT INTO room_circle_invites(room_id,circle_id,user_id,status,created_at) VALUES(?,?,?,'accepted',?)").run(roomId,circleId,user.id,stamp);
+      db.prepare("INSERT INTO room_circle_invites(room_id,circle_id,user_id,status,invited_by,created_at) VALUES(?,?,?,'accepted',?,?)").run(roomId,circleId,user.id,user.id,stamp);
       for(const invitedId of inviteeIds){
-        db.prepare("INSERT INTO room_circle_invites(room_id,circle_id,user_id,status,created_at) VALUES(?,?,?,'pending',?)").run(roomId,circleId,invitedId,stamp);
-        enqueueNotification(invitedId,'discussion_invite',{roomId,circleId},`discussion_invite:${roomId}:${invitedId}`);
+        db.prepare("INSERT INTO room_circle_invites(room_id,circle_id,user_id,status,invited_by,created_at) VALUES(?,?,?,'pending',?,?)").run(roomId,circleId,invitedId,user.id,stamp);
+        enqueueNotification(invitedId,'discussion_invite',{roomId,circleId,inviter:user.display_name,roomTitle:brief.title},`discussion_invite:${roomId}:${invitedId}`);
       }
     }
     if(understanding){const patch=validatePreferencePatch(understanding.patch);db.prepare('UPDATE preferences SET data_json=? WHERE room_id=? AND user_id=?').run(JSON.stringify(patch),roomId,user.id);db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'user',?,?)").run(uid(),roomId,user.id,idea,stamp);db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'assistant',?,?)").run(uid(),roomId,user.id,understanding.reply,new Date(Date.now()+1).toISOString());}
@@ -139,11 +155,10 @@ app.post("/api/rooms",async(req,res)=>{
 app.get("/api/rooms/:id",(req,res)=>{
   const user=userOrFail(req,res);if(!user)return;
   const room=getRoom(req.params.id);if(!room)return fail(res,"讨论间不存在",404);
-  const candidate=db.prepare("SELECT id FROM candidates WHERE room_id=? AND status='opened'").get(room.id) as {id:string}|undefined;
-  if(candidate&&!db.prepare("SELECT 1 FROM candidate_members WHERE candidate_id=? AND user_id=? AND response IN ('pending','yes','later')").get(candidate.id,user.id))return fail(res,"无权查看讨论邀请",403);
   const circleRoom=db.prepare("SELECT circle_id FROM room_circle_invites WHERE room_id=? LIMIT 1").get(room.id) as {circle_id:string}|undefined;
-  if(circleRoom&&!db.prepare("SELECT 1 FROM room_circle_invites ri JOIN circle_members cm ON cm.circle_id=ri.circle_id AND cm.user_id=ri.user_id AND cm.status='active' WHERE ri.room_id=? AND ri.user_id=?").get(room.id,user.id))return fail(res,"无权查看讨论邀请",403);
-  if(!isMember(room.id,user.id)){res.json({joined:false,room:{id:room.id,title:room.title,date:room.date}});return;}
+  const invite=circleRoom?db.prepare("SELECT ri.status,ri.created_at AS createdAt,u.display_name AS inviter,c.name AS circleName FROM room_circle_invites ri JOIN circle_members cm ON cm.circle_id=ri.circle_id AND cm.user_id=ri.user_id AND cm.status='active' JOIN users u ON u.id=ri.invited_by JOIN circles c ON c.id=ri.circle_id WHERE ri.room_id=? AND ri.user_id=? AND ri.status IN ('pending','accepted')").get(room.id,user.id) as {status:string;createdAt:string;inviter:string;circleName:string}|undefined:undefined;
+  if(circleRoom&&!invite)return fail(res,"无权查看讨论邀请",403);
+  if(!isMember(room.id,user.id)){res.json({joined:false,invite,room:{id:room.id,title:room.title,date:room.date}});return;}
   res.json(publicRoom(room.id,user.id));
 });
 app.get('/api/rooms/:id/bulletins',(req,res)=>{
@@ -171,25 +186,81 @@ app.post('/api/rooms/:id/share',(req,res)=>{
 app.post("/api/rooms/:id/join",(req,res)=>{
   const user=userOrFail(req,res);if(!user)return;
   const room=getRoom(req.params.id);if(!room)return fail(res,"讨论间不存在",404);
-  const candidate=db.prepare("SELECT id FROM candidates WHERE room_id=? AND status='opened'").get(room.id) as {id:string}|undefined;
-  if(candidate&&!db.prepare("SELECT 1 FROM candidate_members WHERE candidate_id=? AND user_id=? AND response IN ('pending','yes','later')").get(candidate.id,user.id))return fail(res,"你不在这场讨论的邀请名单中",403);
   const circleRoom=db.prepare("SELECT circle_id FROM room_circle_invites WHERE room_id=? LIMIT 1").get(room.id) as {circle_id:string}|undefined;
-  if(circleRoom&&!db.prepare("SELECT 1 FROM room_circle_invites ri JOIN circle_members cm ON cm.circle_id=ri.circle_id AND cm.user_id=ri.user_id AND cm.status='active' WHERE ri.room_id=? AND ri.user_id=?").get(room.id,user.id))return fail(res,"你不在这场讨论的邀请名单中",403);
+  if(circleRoom&&!db.prepare("SELECT 1 FROM room_circle_invites ri JOIN circle_members cm ON cm.circle_id=ri.circle_id AND cm.user_id=ri.user_id AND cm.status='active' WHERE ri.room_id=? AND ri.user_id=? AND ri.status='pending'").get(room.id,user.id)&&!isMember(room.id,user.id))return fail(res,"你没有待接受的讨论邀请",403);
   if(!isMember(room.id,user.id)){
-    if(room.phase==="final")return fail(res,"这场聚会已定案",409);
+    if(room.phase==="final"||room.phase==="closed")return fail(res,"这场讨论已经结束",409);
     if(activePoll(room.id))return fail(res,"投票进行中，请等投票结束后加入",409);
     const count=(db.prepare("SELECT COUNT(*) AS n FROM members WHERE room_id=?").get(room.id) as {n:number}).n;
     if(count>=10)return fail(res,"讨论间最多 10 人",409);
     db.transaction(()=>{
       db.prepare("INSERT INTO members(room_id,user_id,joined_at) VALUES(?,?,?)").run(room.id,user.id,now());
       db.prepare("INSERT INTO preferences(room_id,user_id,data_json,updated_at) VALUES(?,?,'{}',?)").run(room.id,user.id,now());
-      if(circleRoom)db.prepare("UPDATE room_circle_invites SET status='accepted' WHERE room_id=? AND user_id=?").run(room.id,user.id);
+      if(circleRoom)db.prepare("UPDATE room_circle_invites SET status='accepted',decided_at=? WHERE room_id=? AND user_id=? AND status='pending'").run(now(),room.id,user.id);
+      db.prepare("UPDATE notification_outbox SET status='accepted',delivered_at=COALESCE(delivered_at,?) WHERE user_id=? AND kind='discussion_invite' AND json_extract(payload_json,'$.roomId')=? AND status='pending'").run(now(),user.id,room.id);
       db.prepare("UPDATE rooms SET revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=CASE WHEN mode='blank' AND current_proposal_id IS NULL THEN 0 ELSE 1 END,updated_at=? WHERE id=?").run(now(),room.id);
       emitEvent(room.id,"joined","有新朋友加入了讨论间。" );
       refreshBulletin(room.id);
     })();if(getRoom(room.id)?.coordination_pending)scheduleRoom(room.id);
   }
   res.json(publicRoom(room.id,user.id));
+});
+app.get('/api/rooms/:id/invites',(req,res)=>{
+  const access=roomMember(req,res);if(!access)return;
+  const circle=db.prepare('SELECT circle_id AS id FROM room_circle_invites WHERE room_id=? LIMIT 1').get(access.room.id) as {id:string}|undefined;
+  const rows=db.prepare("SELECT ri.user_id AS userId,u.display_name AS name,ri.status,ri.invited_by AS invitedBy,ri.created_at AS createdAt,ri.decided_at AS decidedAt FROM room_circle_invites ri JOIN users u ON u.id=ri.user_id WHERE ri.room_id=? AND ri.user_id!=? ORDER BY ri.created_at DESC").all(access.room.id,access.user.id);
+  res.json({circleId:circle?.id??null,invites:rows});
+});
+app.post('/api/rooms/:id/invites',(req,res)=>{
+  const access=roomMember(req,res);if(!access)return;
+  if(access.room.phase==='final'||access.room.phase==='closed')return fail(res,'这场讨论已经结束',409);
+  const circle=db.prepare('SELECT circle_id AS id FROM room_circle_invites WHERE room_id=? LIMIT 1').get(access.room.id) as {id:string}|undefined;
+  if(!circle)return fail(res,'请先在熟人圈内创建讨论间',409);
+  const invitedId=String(req.body.userId??'');
+  if(!db.prepare("SELECT 1 FROM circle_members WHERE circle_id=? AND user_id=? AND status='active'").get(circle.id,invitedId))return fail(res,'只能邀请当前熟人圈成员',403);
+  if(isMember(access.room.id,invitedId))return fail(res,'对方已加入讨论',409);
+  const prior=db.prepare('SELECT status FROM room_circle_invites WHERE room_id=? AND user_id=?').get(access.room.id,invitedId) as {status:string}|undefined;
+  if(prior?.status==='pending')return fail(res,'已有待处理邀请',409);
+  const stamp=now();db.transaction(()=>{
+    db.prepare("INSERT INTO room_circle_invites(room_id,circle_id,user_id,status,invited_by,created_at,decided_at) VALUES(?,?,?,'pending',?,?,NULL) ON CONFLICT(room_id,user_id) DO UPDATE SET status='pending',invited_by=excluded.invited_by,created_at=excluded.created_at,decided_at=NULL").run(access.room.id,circle.id,invitedId,access.user.id,stamp);
+    enqueueNotification(invitedId,'discussion_invite',{roomId:access.room.id,circleId:circle.id,inviter:access.user.display_name,roomTitle:access.room.title},`discussion_invite:${access.room.id}:${invitedId}:${stamp}`);
+  })();res.status(201).json({status:'pending'});
+});
+app.post('/api/rooms/:id/invites/respond',(req,res)=>{
+  const user=userOrFail(req,res);if(!user)return;
+  if(req.body.decision!=='decline')return fail(res,'请使用加入操作接受邀请');
+  const changed=db.prepare("UPDATE room_circle_invites SET status='declined',decided_at=? WHERE room_id=? AND user_id=? AND status='pending'").run(now(),req.params.id,user.id);
+  if(!changed.changes)return fail(res,'邀请已失效',409);
+  db.prepare("UPDATE notification_outbox SET status='declined',delivered_at=COALESCE(delivered_at,?) WHERE user_id=? AND kind='discussion_invite' AND json_extract(payload_json,'$.roomId')=? AND status='pending'").run(now(),user.id,req.params.id);
+  res.json({status:'declined'});
+});
+app.post('/api/rooms/:id/invites/:userId/revoke',(req,res)=>{
+  const access=roomMember(req,res);if(!access)return;
+  const changed=db.prepare("UPDATE room_circle_invites SET status='revoked',decided_at=? WHERE room_id=? AND user_id=? AND status='pending' AND invited_by=?").run(now(),access.room.id,req.params.userId,access.user.id);
+  if(!changed.changes)return fail(res,'只能撤销自己发出的待处理邀请',409);
+  db.prepare("UPDATE notification_outbox SET status='revoked',delivered_at=COALESCE(delivered_at,?) WHERE user_id=? AND kind='discussion_invite' AND json_extract(payload_json,'$.roomId')=? AND status='pending'").run(now(),req.params.userId,access.room.id);
+  res.json({status:'revoked'});
+});
+app.post('/api/rooms/:id/leave',(req,res)=>{
+  const access=roomMember(req,res);if(!access)return;
+  const current=currentPlan(access.room.id);
+  if(current&&db.prepare("SELECT 1 FROM attendance WHERE proposal_id=? AND user_id=? AND decision='yes' LIMIT 1").get(current.id,access.user.id))return fail(res,'你已报名，请先逐项取消报名再退出讨论间',409);
+  if(activePoll(access.room.id))return fail(res,'投票进行中，请等投票结束再退出',409);
+  const others=db.prepare('SELECT user_id AS id FROM members WHERE room_id=? AND user_id!=?').all(access.room.id,access.user.id) as {id:string}[];
+  const host=access.room.created_by===access.user.id,transferTo=String(req.body.transferTo??'');
+  if(host&&others.length&&!others.some(m=>m.id===transferTo))return fail(res,'创建者退出前请指定一位现有成员接管',409);
+  db.transaction(()=>{
+    if(host&&others.length)db.prepare('UPDATE rooms SET created_by=? WHERE id=?').run(transferTo,access.room.id);
+    db.prepare('DELETE FROM preferences WHERE room_id=? AND user_id=?').run(access.room.id,access.user.id);
+    db.prepare('DELETE FROM members WHERE room_id=? AND user_id=?').run(access.room.id,access.user.id);
+    db.prepare("UPDATE room_circle_invites SET status='revoked',decided_at=? WHERE room_id=? AND user_id=?").run(now(),access.room.id,access.user.id);
+    if(!others.length){db.prepare("UPDATE rooms SET phase='closed',coordination_pending=0,revision=revision+1,coordination_epoch=coordination_epoch+1,updated_at=? WHERE id=?").run(now(),access.room.id);db.prepare("UPDATE room_circle_invites SET status='expired',decided_at=? WHERE room_id=? AND status='pending'").run(now(),access.room.id);db.prepare("UPDATE notification_outbox SET status='expired',delivered_at=COALESCE(delivered_at,?) WHERE kind='discussion_invite' AND json_extract(payload_json,'$.roomId')=? AND status='pending'").run(now(),access.room.id);}
+    else if(access.room.phase!=='final')db.prepare("UPDATE rooms SET revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=CASE WHEN current_proposal_id IS NULL THEN 0 ELSE 1 END,updated_at=? WHERE id=?").run(now(),access.room.id);
+    emitEvent(access.room.id,'left','有成员退出讨论间，后续安排将按现有成员重新协调。');
+    refreshBulletin(access.room.id);
+  })();
+  if(others.length&&getRoom(access.room.id)?.coordination_pending)scheduleRoom(access.room.id);
+  res.json({left:true,closed:!others.length,hostId:host&&others.length?transferTo:undefined});
 });
 app.post("/api/rooms/:id/answer",(req,res)=>{
   const access=roomMember(req,res);if(!access)return;
@@ -234,6 +305,18 @@ app.post("/api/rooms/:id/message",async(req,res)=>{
   if(Object.keys(patch).length&&latest.current_proposal_id)scheduleRoom(access.room.id);
   res.json({...publicRoom(access.room.id,access.user.id),interpretation:{source:result.source,applied:Object.keys(patch),suggestions:result.suggestions}});
 });
+app.post("/api/rooms/:id/decision",(req,res)=>{
+  const access=roomMember(req,res);if(!access)return;
+  if(access.room.phase==='final'||access.room.phase==='closed')return fail(res,'讨论已结束，不能改变决策参与状态',409);
+  if(activePoll(access.room.id))return fail(res,'投票进行中，请稍后选择',409);
+  const status=String(req.body.status??'');if(!['yes','no'].includes(status))return fail(res,'请选择参与或不参与方案决策');
+  db.transaction(()=>{
+    db.prepare('UPDATE members SET decision_status=? WHERE room_id=? AND user_id=?').run(status,access.room.id,access.user.id);
+    if(status==='no'&&access.room.current_proposal_id)db.prepare('DELETE FROM confirmations WHERE proposal_id=? AND user_id=?').run(access.room.current_proposal_id,access.user.id);
+    finalizeIfReady(access.room.id);
+    refreshBulletin(access.room.id);
+  })();res.json(publicRoom(access.room.id,access.user.id));
+});
 app.post("/api/rooms/:id/confirm",(req,res)=>{
   const access=roomMember(req,res);if(!access)return;
   const decision=String(req.body.decision??"");
@@ -244,14 +327,13 @@ app.post("/api/rooms/:id/confirm",(req,res)=>{
     if(!proposal||proposal.id!==req.body.proposalId||room.phase==="blocked")return "草案已更新或暂停，请查看最新版";
     if(room.coordination_pending)return "主持人正在根据新条件调整方案，请稍后查看最新版";
     if(activePoll(room.id))return "请先完成进行中的投票";
-    if(room.phase==="final")return decision==="accept"?null:"聚会已定案，不能撤销方案确认";
+    if(room.phase==="final")return decision==='accept'&&!!db.prepare("SELECT 1 FROM confirmations WHERE proposal_id=? AND user_id=? AND decision='accept'").get(proposal.id,access.user.id)?null:"聚会已定案，不能修改方案确认";
     const missing=finalizationMissing(proposal.plan);
     if(missing.length)return `还需确定：${missing.join("、")}。可以用私聊或投票解决后再确认`;
+    db.prepare("UPDATE members SET decision_status='yes' WHERE room_id=? AND user_id=?").run(access.room.id,access.user.id);
     db.prepare("INSERT INTO confirmations(proposal_id,user_id,decision,updated_at) VALUES(?,?,?,?) ON CONFLICT(proposal_id,user_id) DO UPDATE SET decision=excluded.decision,updated_at=excluded.updated_at").run(proposal.id,access.user.id,decision,now());
     if(decision==="reject")db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'assistant',?,?)").run(uid(),access.room.id,access.user.id,"哪一部分不合适？可以直接说时间、区域、顺序、吃什么、玩什么或具体预算。我会先私下理解，再决定是否发起投票。",now());
-    const n=(db.prepare("SELECT COUNT(*) AS n FROM confirmations WHERE proposal_id=? AND decision='accept'").get(proposal.id) as {n:number}).n;
-    const total=(db.prepare("SELECT COUNT(*) AS n FROM members WHERE room_id=?").get(access.room.id) as {n:number}).n;
-    if(n===total&&total>=2){const changed=db.prepare("UPDATE rooms SET phase='final',updated_at=? WHERE id=? AND current_proposal_id=? AND coordination_pending=0 AND phase!='final'").run(now(),access.room.id,proposal.id);if(!changed.changes)throw Error("confirmation_version_changed");emitEvent(access.room.id,"final","所有参与者都确认了同一版方案，这场聚会正式定案。" );for(const member of getMembers(access.room.id))enqueueNotification(member.userId,"room_final",{roomId:access.room.id,version:proposal.version},`final:${access.room.id}:${proposal.version}:${member.userId}`);}
+    finalizeIfReady(access.room.id);
     refreshBulletin(access.room.id);
     return null;
   })();

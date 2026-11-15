@@ -58,3 +58,15 @@ assert.equal(state.proposal.confirmed,3);
 const finalNotices=await call<{notifications:{kind:string;payload:{roomId?:string}}[]}>(a,"/api/notifications");
 assert.ok(finalNotices.notifications.some(n=>n.kind==="room_final"&&n.payload.roomId===roomId));
 console.log(JSON.stringify({ok:true,roomId,version:state.proposal.version,privateMessagesIsolated:true,pollClosed:true,confirmed:3}));
+const optional=(await call<{id:string}>(host,"/api/rooms","POST",{...brief,title:`可选决策 ${seed}`})).id;
+await call(a,`/api/rooms/${optional}/join`,"POST",{});await call(b,`/api/rooms/${optional}/join`,"POST",{});
+let optionalState:any;
+for(let i=0;i<40;i++){optionalState=await call<any>(host,`/api/rooms/${optional}`);if(!optionalState.room.coordinationPending&&optionalState.proposal)break;await sleep(100);}
+assert.equal(optionalState.room.coordinationPending,false);
+assert.equal(optionalState.proposal.undecided,3);
+await call(host,`/api/rooms/${optional}/confirm`,"POST",{proposalId:optionalState.proposal.id,decision:"accept"});
+await call(a,`/api/rooms/${optional}/confirm`,"POST",{proposalId:optionalState.proposal.id,decision:"accept"});
+assert.notEqual((await call<any>(host,`/api/rooms/${optional}`)).room.phase,'final','undecided member cannot be silently counted as consent');
+await call(b,`/api/rooms/${optional}/decision`,"POST",{status:"no"});
+const optedOut=await call<any>(host,`/api/rooms/${optional}`);
+assert.equal(optedOut.room.phase,'final');assert.equal(optedOut.proposal.confirmed,2);assert.equal(optedOut.proposal.required,2);

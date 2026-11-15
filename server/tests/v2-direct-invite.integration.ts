@@ -54,3 +54,49 @@ assert.ok(!JSON.stringify((await b(`/rooms/${publicRoom.data.id}`)).data).includ
 const database=new Database(path.join(process.env.DATA_DIR!,'weekend.db'),{readonly:true});
 try{assert.equal((database.prepare('SELECT count(*) AS n FROM members WHERE room_id=?').get(roomId) as {n:number}).n,2);assert.equal((database.prepare("SELECT count(*) AS n FROM room_circle_invites WHERE room_id=? AND status='accepted'").get(roomId) as {n:number}).n,2);assert.equal((database.prepare('SELECT count(*) AS n FROM proposals WHERE room_id=?').get(roomId) as {n:number}).n,0);assert.equal((database.prepare('SELECT count(*) AS n FROM room_public_shares WHERE room_id=?').get(publicRoom.data.id) as {n:number}).n,2);}finally{database.close();}
 console.log(JSON.stringify({ok:true,roomId,invited:true,outsiderDenied:true,noAutoProposal:true}));
+const inviteC=await b(`/rooms/${roomId}/invites`,'POST',{userId:ids[2]});assert.equal(inviteC.status,201,JSON.stringify(inviteC.data));
+assert.equal((await a(`/rooms/${roomId}/invites`,'POST',{userId:ids[2]})).status,409,'duplicate pending invite must fail');
+assert.equal((await c(`/rooms/${roomId}`)).data.joined,false);
+assert.equal((await c(`/rooms/${roomId}/message`,'POST',{text:'未加入不能看或发言'})).status,403);
+const cNotices=(await c('/notifications')).data.notifications;
+assert.ok(cNotices.some((n:any)=>n.kind==='discussion_invite'&&n.status==='pending'&&n.payload.roomId===roomId));
+assert.equal((await a(`/rooms/${roomId}/invites/${ids[2]}/revoke`,'POST',{})).status,409,'only inviter revokes');
+assert.equal((await b(`/rooms/${roomId}/invites/${ids[2]}/revoke`,'POST',{})).status,200);
+assert.equal((await c(`/rooms/${roomId}`)).status,403);
+assert.equal((await c(`/rooms/${roomId}/join`,'POST',{})).status,403);
+assert.equal((await b(`/rooms/${roomId}/invites`,'POST',{userId:ids[2]})).status,201);
+assert.equal((await c(`/rooms/${roomId}/invites/respond`,'POST',{decision:'decline'})).status,200);
+assert.equal((await c(`/rooms/${roomId}/join`,'POST',{})).status,403);
+assert.equal((await b(`/rooms/${roomId}/invites`,'POST',{userId:ids[2]})).status,201);
+assert.equal((await c(`/rooms/${roomId}/join`,'POST',{})).status,200);
+assert.equal((await c(`/rooms/${roomId}`)).data.members.find((m:any)=>m.id===ids[2]).decisionStatus,'undecided','joining discussion is not decision opt-in');
+assert.equal((await c(`/rooms/${roomId}/decision`,'POST',{status:'no'})).status,200);
+assert.equal((await a(`/rooms/${roomId}`)).data.members.find((m:any)=>m.id===ids[2]).decisionStatus,'no');
+assert.equal((await c(`/rooms/${roomId}/decision`,'POST',{status:'yes'})).status,200);
+assert.equal((await b(`/rooms/${roomId}/invites`,'POST',{userId:ids[2]})).status,409,'joined member cannot be re-invited');
+assert.equal((await c(`/rooms/${roomId}/leave`,'POST',{})).status,200);
+assert.equal((await c(`/rooms/${roomId}/message`,'POST',{text:'退出后不能发言'})).status,403);
+assert.equal((await c(`/rooms/${roomId}`)).status,403);
+assert.equal((await a(`/rooms/${roomId}/leave`,'POST',{})).status,409,'host transfer required');
+assert.equal((await a(`/rooms/${roomId}/leave`,'POST',{transferTo:ids[1]})).status,200);
+assert.equal((await b(`/rooms/${roomId}`)).data.room.hostId,ids[1]);
+assert.equal((await b(`/rooms/${roomId}/invites`,'POST',{userId:ids[2]})).status,201);
+assert.equal((await b(`/rooms/${roomId}/leave`,'POST',{})).status,200,'sole host may close the room');
+assert.equal((await c(`/rooms/${roomId}/join`,'POST',{})).status,403,'expired invitation cannot join a closed room');
+const state=new Database(path.join(process.env.DATA_DIR!,'weekend.db'),{readonly:true});
+try{
+  assert.equal((state.prepare('SELECT COUNT(*) AS n FROM members WHERE room_id=?').get(roomId) as {n:number}).n,0);
+  assert.equal((state.prepare("SELECT COUNT(*) AS n FROM room_circle_invites WHERE room_id=? AND status='expired'").get(roomId) as {n:number}).n,1);
+  assert.equal((state.prepare("SELECT phase FROM rooms WHERE id=?").get(roomId) as {phase:string}).phase,'closed');
+  assert.equal((state.prepare("SELECT COUNT(*) AS n FROM notification_outbox WHERE kind='discussion_invite' AND status='pending' AND json_extract(payload_json,'$.roomId')=?").get(roomId) as {n:number}).n,0);
+}finally{state.close();}
+const template=await a('/rooms','POST',{mode:'template',title:'邀请到期验收',circleId:circle.id,inviteeIds:[ids[1],ids[2]],date:'2026-11-21',timeWindow:'noon',area:'学校附近',food:'火锅',play:'桌游',secondPlay:null,rounds:1,order:'eat',after:false,budget:{meal:100,play1:80,play2:null,after:null},note:''});
+assert.equal(template.status,201,JSON.stringify(template.data));const finalRoomId=template.data.id;
+assert.equal((await b(`/rooms/${finalRoomId}/join`,'POST',{})).status,200);
+let ready:any;for(let i=0;i<40;i++){ready=(await a(`/rooms/${finalRoomId}`)).data;if(!ready.room.coordinationPending&&ready.proposal)break;await new Promise(resolve=>setTimeout(resolve,100));}
+assert.ok(ready.proposal);assert.equal(ready.room.coordinationPending,false);
+assert.equal((await a(`/rooms/${finalRoomId}/confirm`,'POST',{proposalId:ready.proposal.id,decision:'accept'})).status,200);
+assert.equal((await b(`/rooms/${finalRoomId}/confirm`,'POST',{proposalId:ready.proposal.id,decision:'accept'})).data.room.phase,'final');
+assert.equal((await c(`/rooms/${finalRoomId}`)).status,403,'pending invitation expires when room is finalized');
+const expired=new Database(path.join(process.env.DATA_DIR!,'weekend.db'),{readonly:true});
+try{assert.equal((expired.prepare('SELECT status FROM room_circle_invites WHERE room_id=? AND user_id=?').get(finalRoomId,ids[2]) as {status:string}).status,'expired');assert.equal((expired.prepare("SELECT COUNT(*) AS n FROM notification_outbox WHERE user_id=? AND kind='discussion_invite' AND status='expired' AND json_extract(payload_json,'$.roomId')=?").get(ids[2],finalRoomId) as {n:number}).n,1);}finally{expired.close();}

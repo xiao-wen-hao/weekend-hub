@@ -7,3 +7,12 @@
 .v2-home-intro select{display:block;min-width:180px;margin-bottom:16px;padding:11px;border:1px solid #c8d9c6;border-radius:10px;background:#fff;color:#264631}.v2-home-intro>div{display:flex;flex-wrap:wrap;gap:10px}
 .v2-home-notices{display:grid;gap:9px;margin:10px 0 30px}.v2-home-notices button,.v2-home-notices p{padding:14px 18px;border:1px solid #e0e9dc;border-radius:12px;background:#fff;text-align:left;color:#2e593b;font:inherit}
 @media(max-width:600px){.v2-home-intro{padding:24px 20px}.v2-home-intro>div .button{width:100%}}
+.invite-dialog{max-width:560px;max-height:min(84vh,760px);overflow:auto;display:grid;gap:16px}
+.invite-dialog .invite-list{display:grid;gap:8px;max-height:220px;overflow:auto}
+.invite-dialog .person-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #e8ede6}
+.invite-dialog .person-state{margin-left:auto;color:#6f806f;font-size:13px}
+.invite-dialog .decision-choices{padding:16px;border-radius:14px;background:#f3f7ef;display:flex;gap:8px;flex-wrap:wrap}
+.invite-dialog .decision-choices strong,.invite-dialog .decision-choices p{width:100%;margin:0}
+.invite-dialog .decision-choices p{color:#708070;font-size:13px}
+.invite-dialog select{width:100%;min-height:44px;margin-top:8px}
+.join-card .button+.button{margin:10px 0 0 10px}

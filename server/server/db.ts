@@ -120,6 +120,18 @@ AND (SELECT json_extract(p.plan_json,'$.date') FROM proposals p WHERE p.id=rooms
 `;
 if(version<13){db.transaction(()=>{db.exec(migration13);db.pragma("user_version = 13");})();}
 
+const migration14=`
+CREATE TABLE room_circle_invites_new(room_id TEXT NOT NULL REFERENCES rooms(id),circle_id TEXT NOT NULL REFERENCES circles(id),user_id TEXT NOT NULL REFERENCES users(id),status TEXT NOT NULL CHECK(status IN ('pending','accepted','declined','revoked','expired')),invited_by TEXT NOT NULL REFERENCES users(id),created_at TEXT NOT NULL,decided_at TEXT,PRIMARY KEY(room_id,user_id));
+INSERT INTO room_circle_invites_new(room_id,circle_id,user_id,status,invited_by,created_at) SELECT i.room_id,i.circle_id,i.user_id,i.status,r.created_by,i.created_at FROM room_circle_invites i JOIN rooms r ON r.id=i.room_id;
+INSERT OR IGNORE INTO room_circle_invites_new(room_id,circle_id,user_id,status,invited_by,created_at) SELECT c.room_id,c.circle_id,cm.user_id,CASE WHEN m.user_id IS NULL THEN 'pending' ELSE 'accepted' END,r.created_by,r.created_at FROM candidates c JOIN rooms r ON r.id=c.room_id JOIN candidate_members cm ON cm.candidate_id=c.id LEFT JOIN members m ON m.room_id=c.room_id AND m.user_id=cm.user_id WHERE c.status='opened' AND c.room_id IS NOT NULL AND cm.response IN ('pending','yes','later');
+DROP TABLE room_circle_invites;
+ALTER TABLE room_circle_invites_new RENAME TO room_circle_invites;
+CREATE INDEX idx_room_circle_invites_circle ON room_circle_invites(circle_id,user_id);
+`;
+if(version<14){db.transaction(()=>{db.exec(migration14);db.pragma("user_version = 14");})();}
+
+if(version<15){db.transaction(()=>{db.exec("ALTER TABLE members ADD COLUMN decision_status TEXT NOT NULL DEFAULT 'undecided' CHECK(decision_status IN ('undecided','yes','no')); UPDATE members SET decision_status='yes';");db.pragma("user_version = 15");})();}
+
 export type RoomRow={id:string;title:string;date:string;mode:'blank'|'template';brief_json:string;phase:string;current_proposal_id:string|null;revision:number;coordination_pending:number;coordination_epoch:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
 export const now=()=>new Date().toISOString();

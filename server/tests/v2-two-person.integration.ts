@@ -56,4 +56,13 @@ assert.equal((await b(`/rooms/${roomId}/confirm`,'POST',{proposalId:proposal.id,
 for(const segment of proposal.plan.segments)for(const call of [a,b])assert.equal((await call(`/rooms/${roomId}/attendance`,'POST',{proposalId:proposal.id,segmentId:segment.id,decision:'yes'})).status,200);
 const database=new Database(path.join(process.env.DATA_DIR!,'weekend.db'),{readonly:true});
 try{assert.equal((database.prepare('SELECT count(*) AS n FROM members WHERE room_id=?').get(roomId) as {n:number}).n,2);assert.equal((database.prepare('SELECT count(*) AS n FROM confirmations WHERE proposal_id=? AND decision=\'accept\'').get(proposal.id) as {n:number}).n,2);assert.equal((database.prepare('SELECT count(*) AS n FROM attendance WHERE proposal_id=? AND decision=\'yes\'').get(proposal.id) as {n:number}).n,proposal.plan.segments.length*2);}finally{database.close();}
+assert.equal((await b(`/rooms/${roomId}/leave`,'POST',{})).status,409,'confirmed attendance requires explicit cancellation before exit');
+for(const segment of proposal.plan.segments)assert.equal((await b(`/rooms/${roomId}/attendance`,'POST',{proposalId:proposal.id,segmentId:segment.id,decision:'no'})).status,200);
+assert.equal((await b(`/rooms/${roomId}/leave`,'POST',{})).status,200);
+assert.equal((await b(`/rooms/${roomId}/message`,'POST',{text:'已退出'})).status,403);
+const afterLeave=(await a(`/rooms/${roomId}`)).data;
+assert.equal(afterLeave.room.phase,'final');
+assert.equal(afterLeave.proposal.confirmed,1,'departed member confirmation is history, not current confirmation');
+const history=new Database(path.join(process.env.DATA_DIR!,'weekend.db'),{readonly:true});
+try{assert.equal((history.prepare('SELECT count(*) AS n FROM confirmations WHERE proposal_id=?').get(proposal.id) as {n:number}).n,2);assert.equal((history.prepare('SELECT count(*) AS n FROM attendance WHERE proposal_id=? AND user_id=?').get(proposal.id,(await b('/me')).data.user.id) as {n:number}).n,proposal.plan.segments.length);}finally{history.close();}
 console.log(JSON.stringify({ok:true,roomId,candidateId:candidate.id,twoMembers:true,outsiderDenied:true,finalVersion:proposal.version,attendance:proposal.plan.segments.length*2}));

@@ -17,7 +17,9 @@ test("time evidence must agree with the extracted window",()=>{
 test('hiking expressions share one category without inventing a time',()=>{
   const climb=fallbackIntent('周末想去爬山，预算100元以内');
   const walk=fallbackIntent('想约大家郊外徒步');
+  const stroll=fallbackIntent('想去郊外走走，不想太累');
   assert.equal(climb.category,'徒步');assert.equal(walk.category,'徒步');
+  assert.equal(stroll.category,'徒步');assert.equal(stroll.windowId,null);
   assert.equal(climb.windowId,null);assert.equal(climb.budgetCap,100);
   assert.equal(validateIntentOutput('周末想去爬山',{category:'徒步',windowId:null,evidence:{category:'爬山',time:null}}).category,'徒步');
 });

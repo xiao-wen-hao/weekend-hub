@@ -13,9 +13,9 @@ router.get("/notifications",(req,res)=>{
 });
 router.post("/notifications/:id/read",(req,res)=>{
   const user=currentUser(req);if(!user)return res.status(401).json({error:"请先登录"});
-  const row=db.prepare("SELECT id FROM notification_outbox WHERE id=? AND user_id=?").get(req.params.id,user.id);
+  const row=db.prepare("SELECT id,kind FROM notification_outbox WHERE id=? AND user_id=?").get(req.params.id,user.id) as {id:string;kind:string}|undefined;
   if(!row)return res.status(404).json({error:"通知不存在"});
-  db.prepare("UPDATE notification_outbox SET status='read',delivered_at=COALESCE(delivered_at,?) WHERE id=? AND user_id=?").run(now(),req.params.id,user.id);
+  db.prepare("UPDATE notification_outbox SET status=CASE WHEN kind='discussion_invite' THEN status ELSE 'read' END,delivered_at=COALESCE(delivered_at,?) WHERE id=? AND user_id=?").run(now(),req.params.id,user.id);
   res.json({ok:true});
 });
 export default router;
