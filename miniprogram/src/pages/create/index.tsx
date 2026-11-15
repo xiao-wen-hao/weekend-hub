@@ -4,7 +4,7 @@ import {Button,Input,Picker,Text,Textarea,View} from '@tarojs/components'
 import {api,ApiError,backHome,requireLogin} from '../../api'
 
 const foods=['火锅','烤肉','川菜','湘菜','日料','粤菜','西餐','简餐']
-const plays=['桌游','KTV','电影','剧本杀','密室逃脱','保龄球','逛街','散步聊天','徒步']
+const plays=['桌游','KTV','电影','剧本杀','密室逃脱','保龄球','逛街','散步聊天','徒步','羽毛球']
 const nextSaturday=()=>{const d=new Date();d.setDate(d.getDate()+((6-d.getDay()+7)%7||7));return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 
 export default function Create(){

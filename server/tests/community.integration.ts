@@ -19,9 +19,9 @@ let isolated=false;try{await b(`/notifications/${noticeA.id}/read`,"POST",{});}c
 await a(`/notifications/${noticeA.id}/read`,"POST",{});await a(`/notifications/${noticeA.id}/read`,"POST",{});
 if((await a("/notifications")).notifications.find((n:any)=>n.id===noticeA.id)?.status!=="read")throw Error("Read state not persisted");
 for(const call of [a,b,c])await call(`/candidates/${candidate.id}/respond`,"POST",{decision:"yes"});
-const opened=await a(`/candidates/${candidate.id}/open`,"POST",{});if(!opened.roomId)throw Error("Room not created");if(!(await b("/notifications")).notifications.some((n:any)=>n.kind==="room_opened"&&n.payload.roomId===opened.roomId))throw Error("Room opening notification missing");
+const opened=await a(`/candidates/${candidate.id}/open`,"POST",{});if(!opened.roomId)throw Error("Room not created");if(!(await b("/notifications")).notifications.some((n:any)=>n.kind==="discussion_invite"&&n.payload.roomId===opened.roomId))throw Error("Discussion invitation missing");
 let reopened=false;try{await b(`/candidates/${candidate.id}/open`,"POST",{});}catch(e){reopened=String(e).includes("409");}if(!reopened)throw Error("Candidate opened twice");
-const room=await b(`/rooms/${opened.roomId}`);if(!room.joined||!room.proposal)throw Error("Opening draft missing");if(new Date(`${room.room.date}T00:00:00Z`).getUTCDay()!==6)throw Error("Candidate room date is not Saturday");
+const invitation=await b(`/rooms/${opened.roomId}`);if(invitation.joined||invitation.proposal)throw Error("Invitee joined without consent");await b(`/rooms/${opened.roomId}/join`,"POST",{});const room=await b(`/rooms/${opened.roomId}`);if(!room.joined||room.proposal)throw Error("Blank discussion invitation state wrong");if(new Date(`${room.room.date}T00:00:00Z`).getUTCDay()!==6)throw Error("Candidate room date is not Saturday");
 const withdrawn=await a(`/intents/${own.intents[0].id}/withdraw`,"POST",{});if(!withdrawn.ok)throw Error("Withdrawal failed");
 const second=await a("/circles","POST",{name:"编辑测试圈"});
 await b("/circles/join","POST",{code:second.joinCode});await c("/circles/join","POST",{code:second.joinCode});
@@ -29,7 +29,7 @@ const secondIntents=[];for(const call of [a,b,c])secondIntents.push(await call(`
 const secondCandidate=(await a(`/circles/${second.id}/candidates`)).candidates[0];if(!secondCandidate)throw Error("Second candidate missing");
 const edit=await a(`/intents/${secondIntents[0].id}`,"PATCH",{category:"KTV"});
 if(edit.status!=="paused"||edit.confirmedAt!==null)throw Error("Edited intent stayed confirmed");
-const closed=(await a(`/circles/${second.id}/candidates`)).candidates[0];if(closed.status!=="closed")throw Error("Candidate stayed open after consent changed");
+const remaining=(await b(`/circles/${second.id}/candidates`)).candidates;if(!remaining.some((x:any)=>x.status==="probing"))throw Error("Two remaining members lost valid discussion suggestion");
 const third=await a("/circles","POST",{name:"过期测试圈"});
 await b("/circles/join","POST",{code:third.joinCode});await c("/circles/join","POST",{code:third.joinCode});
 for(const call of [a,b,c])await call(`/circles/${third.id}/intents`,"POST",{text:"周六下午想玩桌游",matchAllowed:true,contactAllowed:true,confirmed:true});

@@ -122,6 +122,8 @@ app.post("/api/rooms",async(req,res)=>{
 app.get("/api/rooms/:id",(req,res)=>{
   const user=userOrFail(req,res);if(!user)return;
   const room=getRoom(req.params.id);if(!room)return fail(res,"讨论间不存在",404);
+  const candidate=db.prepare("SELECT id FROM candidates WHERE room_id=? AND status='opened'").get(room.id) as {id:string}|undefined;
+  if(candidate&&!db.prepare("SELECT 1 FROM candidate_members WHERE candidate_id=? AND user_id=? AND response IN ('pending','yes','later')").get(candidate.id,user.id))return fail(res,"无权查看讨论邀请",403);
   if(!isMember(room.id,user.id)){res.json({joined:false,room:{id:room.id,title:room.title,date:room.date}});return;}
   res.json(publicRoom(room.id,user.id));
 });
@@ -149,6 +151,8 @@ app.post('/api/rooms/:id/share',(req,res)=>{
 app.post("/api/rooms/:id/join",(req,res)=>{
   const user=userOrFail(req,res);if(!user)return;
   const room=getRoom(req.params.id);if(!room)return fail(res,"讨论间不存在",404);
+  const candidate=db.prepare("SELECT id FROM candidates WHERE room_id=? AND status='opened'").get(room.id) as {id:string}|undefined;
+  if(candidate&&!db.prepare("SELECT 1 FROM candidate_members WHERE candidate_id=? AND user_id=? AND response IN ('pending','yes','later')").get(candidate.id,user.id))return fail(res,"你不在这场讨论的邀请名单中",403);
   if(!isMember(room.id,user.id)){
     if(room.phase==="final")return fail(res,"这场聚会已定案",409);
     if(activePoll(room.id))return fail(res,"投票进行中，请等投票结束后加入",409);
@@ -224,7 +228,7 @@ app.post("/api/rooms/:id/confirm",(req,res)=>{
     if(decision==="reject")db.prepare("INSERT INTO messages(id,room_id,user_id,role,body,created_at) VALUES(?,?,?,'assistant',?,?)").run(uid(),access.room.id,access.user.id,"哪一部分不合适？可以直接说时间、区域、顺序、吃什么、玩什么或具体预算。我会先私下理解，再决定是否发起投票。",now());
     const n=(db.prepare("SELECT COUNT(*) AS n FROM confirmations WHERE proposal_id=? AND decision='accept'").get(proposal.id) as {n:number}).n;
     const total=(db.prepare("SELECT COUNT(*) AS n FROM members WHERE room_id=?").get(access.room.id) as {n:number}).n;
-    if(n===total&&total>=3){const changed=db.prepare("UPDATE rooms SET phase='final',updated_at=? WHERE id=? AND current_proposal_id=? AND coordination_pending=0 AND phase!='final'").run(now(),access.room.id,proposal.id);if(!changed.changes)throw Error("confirmation_version_changed");emitEvent(access.room.id,"final","所有参与者都确认了同一版方案，这场聚会正式定案。" );for(const member of getMembers(access.room.id))enqueueNotification(member.userId,"room_final",{roomId:access.room.id,version:proposal.version},`final:${access.room.id}:${proposal.version}:${member.userId}`);}
+    if(n===total&&total>=2){const changed=db.prepare("UPDATE rooms SET phase='final',updated_at=? WHERE id=? AND current_proposal_id=? AND coordination_pending=0 AND phase!='final'").run(now(),access.room.id,proposal.id);if(!changed.changes)throw Error("confirmation_version_changed");emitEvent(access.room.id,"final","所有参与者都确认了同一版方案，这场聚会正式定案。" );for(const member of getMembers(access.room.id))enqueueNotification(member.userId,"room_final",{roomId:access.room.id,version:proposal.version},`final:${access.room.id}:${proposal.version}:${member.userId}`);}
     refreshBulletin(access.room.id);
     return null;
   })();

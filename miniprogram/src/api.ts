@@ -34,4 +34,4 @@ export const roomPath=(id:string)=>`/pages/room/index?id=${encodeURIComponent(id
 export const circlePath=(id:string)=>`/pages/circle/index?id=${encodeURIComponent(id)}`
 export const times:Record<string,string>={morning:'上午',noon:'中午',afternoon:'下午',evening:'晚上',unsure:'时间待商量'}
 export const foods=['火锅','烤肉','川菜','湘菜','日料','粤菜','西餐','简餐']
-export const plays=['桌游','KTV','电影','剧本杀','密室逃脱','保龄球','逛街','散步聊天','徒步']
+export const plays=['桌游','KTV','电影','剧本杀','密室逃脱','保龄球','逛街','散步聊天','徒步','羽毛球']

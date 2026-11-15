@@ -1,5 +1,5 @@
 export const FOODS = ["火锅","烤肉","川菜","湘菜","日料","粤菜","西餐","简餐"] as const;
-export const PLAYS = ["桌游","KTV","剧本杀","密室逃脱","电影","保龄球","逛街","散步聊天","徒步"] as const;
+export const PLAYS = ["桌游","KTV","剧本杀","密室逃脱","电影","保龄球","逛街","散步聊天","徒步","羽毛球"] as const;
 export const START_WINDOWS = [
   {id:"morning",label:"上午见",start:10},
   {id:"noon",label:"中午见",start:12},

@@ -28,10 +28,13 @@ const reason=String(candidate.matchReasonJson??"");
 if(reason.includes("学校附近")||reason.includes("200")||reason.includes("爬山"))throw Error("Private intent leaked into candidate reason");
 for(const call of clients)await call(`/candidates/${candidate.id}/respond`,"POST",{decision:"yes"});
 const opened=await a(`/candidates/${candidate.id}/open`,"POST",{});
+const invitation=await b(`/rooms/${opened.roomId}`);
+if(invitation.joined)throw Error("Candidate invite auto-joined the member");
+await b(`/rooms/${opened.roomId}/join`,"POST",{});
 const room=await b(`/rooms/${opened.roomId}`);
-if(!room.joined||room.room?.phase!=="draft"||!room.proposal)throw Error("Candidate did not open a real discussion room");
+if(!room.joined||room.room?.phase!=="draft"||room.proposal)throw Error("Candidate did not open a blank discussion room");
 const discussion=(await a(`/circles/${circle.id}/discussions`)).rooms;
-if(!discussion.some((x:any)=>x.id===opened.roomId&&x.memberCount===3))throw Error('Circle discussion list did not show the opened room');
+if(!discussion.some((x:any)=>x.id===opened.roomId&&x.memberCount===2))throw Error('Circle discussion list did not show the opened room');
 let outsiderCookie='';const outsider=async(route:string,method:'GET'|'POST'='GET',body?:unknown)=>{const response=await fetch(base+route,{method,headers:{...(outsiderCookie?{Cookie:outsiderCookie}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});const set=response.headers.get('set-cookie');if(set)outsiderCookie=set.split(';',1)[0];return response;};
 const registration=await outsider('/register','POST',{username:`v2o_${Date.now()}`,name:'圈外人',password:'test-password-123'});
 if(registration.status!==201)throw Error(`Outsider registration failed: ${registration.status}`);
@@ -41,6 +44,6 @@ const database=new Database(path.join(process.env.DATA_DIR!,"weekend.db"),{reado
 try{
   const persisted=database.prepare("SELECT status,room_id FROM candidates WHERE id=?").get(candidate.id) as any;
   const members=database.prepare("SELECT count(*) AS n FROM members WHERE room_id=?").get(opened.roomId) as {n:number};
-  if(persisted?.status!=="opened"||persisted.room_id!==opened.roomId||members.n!==3)throw Error("Database candidate state inconsistent");
+  if(persisted?.status!=="opened"||persisted.room_id!==opened.roomId||members.n!==2)throw Error("Database candidate state inconsistent");
 }finally{database.close();}
 console.log(JSON.stringify({ok:true,candidateId:candidate.id,roomId:opened.roomId,members:3,privateReason:true}));

@@ -3,7 +3,7 @@ import {FOODS,PLAYS} from "../shared/domain";
 export type IntentInterpretation={category:string|null;windowId:"morning"|"noon"|"afternoon"|"evening"|null;area:string|null;budgetCap:number|null;evidence:{category:string|null;time:string|null;area:string|null;budget:string|null};source:"model"|"fallback"};
 const categories=[...PLAYS,...FOODS] as string[];
 const windows={morning:/上午|早上/,noon:/中午/,afternoon:/下午/,evening:/晚上|夜里/} as const;
-const aliases:{pattern:RegExp;category:string}[]=[{pattern:/爬山|登山|郊外徒步|徒步旅行/,category:'徒步'},{pattern:/唱歌|唱K/i,category:'KTV'},{pattern:/烧烤/,category:'烤肉'}];
+const aliases:{pattern:RegExp;category:string}[]=[{pattern:/爬山|登山|郊外徒步|徒步旅行|户外走走|户外徒步/,category:'徒步'},{pattern:/唱歌|唱K/i,category:'KTV'},{pattern:/烧烤/,category:'烤肉'}];
 const negated=(text:string,evidence:string)=>new RegExp(`(?:不想|不去|不玩|不吃|不要|讨厌)\\s*(?:去|玩|吃)?\\s*${evidence}`).test(text);
 const money=(text:string)=>text.match(/(?:预算|人均|花费)[^\d]{0,8}(\d{2,4})\s*元?(?:以内|以下|左右)?|(\d{2,4})\s*元(?:以内|以下)/);
 export function fallbackIntent(text:string):IntentInterpretation{
