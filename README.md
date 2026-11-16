@@ -1,27 +1,48 @@
 # 周末局 V2
 
-自然语言驱动的熟人组局项目项目。Web、Capacitor Android 和 Taro 微信小程序共用 Express + SQLite 后端。
+周末局是小型熟人圈的自然语言组局工具。成员先说出模糊的活动意愿；系统寻找潜在共同兴趣，**由人决定**是否发起讨论。讨论间的 AI 协助归纳共识、发现分歧和提出问题，最终方案仍须成员逐人确认。
 
-## 当前队友试用
+## 从想法到成行
 
-- Web：<https://example.invalid/>
-- Android APK：[下载试用版](https://example.invalid/downloads/zhoumoju-v0.1.0-android.apk)。下载后在 Android 手机上允许安装来自该来源的应用。
-- 首次注册：向项目负责人领取内测邀请码，自行设置用户名和密码；之后直接登录。负责人可在本机 `server/data/team-trial/invite-code.txt` 查看邀请码并私下发送。APK 已预填当前 HTTPS 地址，也允许在登录页修改。ngrok 免费入口首次在浏览器打开时可能要求点一次“Visit Site”。
-- 后端运行在项目负责人 Windows 电脑的 3160 端口，经 ngrok 账号的固定免费开发域名提供 HTTPS；电脑、后端和隧道必须保持运行。若以后更换域名，APK 登录页可改填新地址。
-- 试用数据位于 `server/data/team-trial/`，与 `server/data/course-2026/` 的本地示例数据隔离。上述目录、邀请码和服务端模型密钥均不进入 Git。
+1. 加入熟人圈，自然语言表达意愿，核对 AI 理解后确认投递。
+2. 授权匹配后查看候选局；成员自行决定是否讨论及接受邀请。
+3. 在讨论间查看共享公告、私下表达限制，必要时参与投票。
+4. 核对当前方案版本，逐人确认并对每项活动分别报名。
 
-负责人重启时，在 `server/` 的 PowerShell 终端设置 `PORT=3160`、`DATA_DIR` 为 `server/data/team-trial` 的绝对路径、`TRIAL_INVITE_CODE` 为该目录 `invite-code.txt` 的内容，然后运行 `npm start`；另一个终端运行 `ngrok http 3160`。服务端会从被忽略的 `server/.env` 读取模型密钥。不要把邀请码或密钥写进仓库或命令截图。
+意愿不等于邀请，进入讨论间不等于报名，沉默也不等于同意。私人原话默认不公开。
 
-本次 APK 是**调试签名**的小范围试用包。微信小程序真机仍需正式 AppID 与合法域名配置；开发者工具可按 [小程序说明](miniprogram/README.md)运行。
+## 代码和技术
 
-## 本地开发
+| 位置 | 用途 |
+| --- | --- |
+| `server/server/` | Express + TypeScript API、权限、协调任务与 SQLite 迁移 |
+| `server/src/` | React + Vite Web 界面 |
+| `server/android/` | Capacitor Android Studio 工程，复用 Web 界面 |
+| `miniprogram/` | Taro + React 微信小程序，调用同一后端 |
+| `server/shared/` | 跨服务端和 Web 使用的类型与纯业务工具 |
+| `server/tests/` | 单元与集成测试 |
 
-需要 Node.js 22+。在 `server/` 执行 `npm ci`，复制 `.env.example` 为 `.env`，给本机设置独立的 `DATA_DIR`，然后运行 `npm run dev`。没有 `TOKENDANCE_API_KEY` 时，AI 相关功能会明确降级。Web 默认访问 `http://localhost:3000`。
+业务状态、权限、投票、方案版本和报名以服务端数据库为准。详见[架构文档](docs/ARCHITECTURE.md)。
 
-Android：在 `server/` 运行 `npm run sync:android`，用 Android Studio 打开 `server/android/`，构建 `assembleDebug`。小程序：在 `miniprogram/` 运行 `npm ci`、`npm run build:weapp`，用微信开发者工具导入。
+## 五分钟启动 Web
 
-## GitHub Release
+需要 Node.js **22+**。在仓库的 `server/` 目录执行：
 
-在仓库的 **Actions → Publish Android trial release → Run workflow** 中填写版本标签（如 `v0.1.0`）和当时有效的 HTTPS 后端地址。工作流构建带有该默认地址的 APK，并创建含 APK、[版本说明](RELEASE_NOTES.md)和 GitHub 自动生成源码包的预发布版。工作流仅在推送到 GitHub 且仓库允许 Actions 写入 Release 后可用。
+```powershell
+npm ci
+Copy-Item .env.example .env
+npm run dev
+```
 
-服务端环境变量见 [示例](server/.env.example)，本地示例步骤见 [DEMO](server/DEMO.md)。
+打开 `http://localhost:3000`。首次启动会在 `server/data/` 自动建立空 SQLite 库并执行迁移；建议在 `.env` 中给自己的开发库设置独立 `DATA_DIR`。没有自己的模型 Key 时部分解析与匹配会降级，语义协商不可用。详细配置与三端命令见[开发指南](docs/DEVELOPMENT.md)。
+
+## 文档
+
+- [产品概念与流程](docs/PRODUCT.md)
+- [系统架构与关键目录](docs/ARCHITECTURE.md)
+- [数据库与 API](docs/DATABASE_AND_API.md)
+- [LLM、降级和隐私](docs/LLM.md)
+- [从零开发与测试](docs/DEVELOPMENT.md)
+- [贡献指南](CONTRIBUTING.md) · [安全报告](SECURITY.md) · [变更记录](CHANGELOG.md)
+
+项目采用 [MIT 许可证](LICENSE)。仓库不提供私人试用库、服务地址或模型凭据；开发者使用自己的本地数据和 Key。

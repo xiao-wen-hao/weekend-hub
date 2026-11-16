@@ -8,5 +8,15 @@ server/node_modules/
 server/dist/
 server/data/
 server/.env
+.env*
+!.env.example
+!server/.env.example
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.tmp
 miniprogram/project.private.config.json
 *.log
