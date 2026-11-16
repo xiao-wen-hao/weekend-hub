@@ -17,6 +17,7 @@ import {buildBulletin,currentBulletin,refreshBulletin} from './bulletin';
 import {annotatePublicShare,recoverPublicSummaries} from './public-summary';
 import {recoverPublicGuidance,updatePublicGuidance} from './public-guidance';
 import {modelPlanOption,ownCoordination,recoverSemanticCoordination,scheduleSemanticCoordination} from './semantic-coordination';
+import {trialAccess} from './trial-access';
 
 const app=express();
 app.set("trust proxy",1);
@@ -35,6 +36,7 @@ app.use((req,res,next)=>{
   if(["POST","PUT","PATCH","DELETE"].includes(req.method)&&origin&&!mobileOrigins.has(origin)&&new URL(origin).host!==req.headers.host)return res.status(403).json({error:"跨站请求已拒绝"});
   next();
 });
+app.use(trialAccess);
 const fail=(res:express.Response,message:string,status=400)=>res.status(status).json({error:message});
 const userOrFail=(req:express.Request,res:express.Response)=>{const user=currentUser(req);if(!user)fail(res,"请先登录",401);return user;};
 const roomMember=(req:express.Request,res:express.Response)=>{const user=userOrFail(req,res);if(!user)return null;const room=getRoom(String(req.params.id));if(!room){fail(res,"讨论间不存在",404);return null;}if(!isMember(room.id,user.id)){fail(res,"请先加入讨论间",403);return null;}const circle=db.prepare('SELECT circle_id FROM room_circle_invites WHERE room_id=? LIMIT 1').get(room.id) as {circle_id:string}|undefined;if(circle&&!db.prepare("SELECT 1 FROM circle_members WHERE circle_id=? AND user_id=? AND status='active'").get(circle.circle_id,user.id)){fail(res,'已离开所属熟人圈',403);return null;}return {user,room};};

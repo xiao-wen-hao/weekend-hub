@@ -1,0 +1,53 @@
+name: Publish Android trial release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v0.1.0
+        required: true
+        default: v0.1.0
+      api_url:
+        description: Public HTTPS backend URL to embed in the APK
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  android-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Validate release inputs
+        env:
+          TAG: ${{ inputs.tag }}
+          API_URL: ${{ inputs.api_url }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Tag must be vMAJOR.MINOR.PATCH'; exit 1; }
+          [[ "$API_URL" =~ ^https://[^/]+ ]] || { echo 'API URL must use HTTPS'; exit 1; }
+      - name: Build Android app
+        env:
+          VITE_API_BASE_URL: ${{ inputs.api_url }}
+        run: |
+          npm ci --prefix server
+          npm run sync:android --prefix server
+          cd server/android
+          chmod +x gradlew
+          ./gradlew assembleDebug --console=plain
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          cp server/android/app/build/outputs/apk/debug/app-debug.apk "zhoumoju-${TAG}-android.apk"
+          gh release create "$TAG" "zhoumoju-${TAG}-android.apk" --target "$GITHUB_SHA" --title "周末局 ${TAG} 试用版" --notes-file RELEASE_NOTES.md --prerelease

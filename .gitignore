@@ -8,4 +8,5 @@ server/node_modules/
 server/dist/
 server/data/
 server/.env
+miniprogram/project.private.config.json
 *.log

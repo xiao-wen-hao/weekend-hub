@@ -1,41 +1,27 @@
-# 周末局 Android 项目原型
+# 周末局 V2
 
-此项目按《周末局_需求分析与概要详细设计说明书》升级，沿用同目录 `ws` 项目的 Android Studio、Gradle Kotlin DSL、Java/XML 结构。`app/` 是 Android 客户端，`server/` 是可单机部署的 Express + SQLite 服务，含原有的 React 活动讨论间。服务端 API 可供之后的微信小程序复用。
+自然语言驱动的熟人组局项目项目。Web、Capacitor Android 和 Taro 微信小程序共用 Express + SQLite 后端。
 
-## 当前可运行流程
+## 当前队友试用
 
-1. 注册或登录，创建熟人圈，把邀请码发给朋友。
-2. 在圈内用一句话表达意愿，先预览系统理解的类别和时段，可以手动改正或保持待确认，再确认投递。**分别明确勾选**允许圈内匹配、允许针对候选私下询问；默认两个授权都关闭。
-3. 三位成员投递相同活动类别和时段后，系统产生圈内候选局。参与者逐人点击“愿意讨论”；三人愿意后可开活动讨论间。
-4. 在 Android 客户端内打开活动讨论间。此页面承载现有响应式网页的即时草案、私聊、投票、分项预算、报名和同版确认；Android 原生界面负责前半程，讨论间在应用内 WebView 中运行。
+- Web：<https://example.invalid/>
+- Android APK：[下载试用版](https://example.invalid/downloads/zhoumoju-v0.1.0-android.apk)。下载后在 Android 手机上允许安装来自该来源的应用。
+- 首次注册：向项目负责人领取内测邀请码，自行设置用户名和密码；之后直接登录。负责人可在本机 `server/data/team-trial/invite-code.txt` 查看邀请码并私下发送。APK 已预填当前 HTTPS 地址，也允许在登录页修改。ngrok 免费入口首次在浏览器打开时可能要求点一次“Visit Site”。
+- 后端运行在项目负责人 Windows 电脑的 3160 端口，经 ngrok 账号的固定免费开发域名提供 HTTPS；电脑、后端和隧道必须保持运行。若以后更换域名，APK 登录页可改填新地址。
+- 试用数据位于 `server/data/team-trial/`，与 `server/data/course-2026/` 的本地示例数据隔离。上述目录、邀请码和服务端模型密钥均不进入 Git。
 
-本阶段的意愿解析是保守的本地类别与时段识别；不确定项保持未知。候选发现只在一个熟人圈内、相同类别和时段、已明确授权的有效意愿之间进行。当前没有微信登录、订阅消息、真实场所价格、跨圈推荐或多实例部署。Android 客户端是该文档所建议的小程序之外的先行客户端，不应视作已经完成小程序适配。
+负责人重启时，在 `server/` 的 PowerShell 终端设置 `PORT=3160`、`DATA_DIR` 为 `server/data/team-trial` 的绝对路径、`TRIAL_INVITE_CODE` 为该目录 `invite-code.txt` 的内容，然后运行 `npm start`；另一个终端运行 `ngrok http 3160`。服务端会从被忽略的 `server/.env` 读取模型密钥。不要把邀请码或密钥写进仓库或命令截图。
 
-## 运行
+本次 APK 是**调试签名**的小范围试用包。微信小程序真机仍需正式 AppID 与合法域名配置；开发者工具可按 [小程序说明](miniprogram/README.md)运行。
 
-需要 Node.js 22+、Android Studio 和 Android SDK。Android 工程打开 `D:\AndroidStudioProjects\zhoumoju`，使用 `gradlew.bat :app:assembleDebug` 构建。调试 APK 位于 `app/build/outputs/apk/debug/`。
+## 本地开发
 
-服务端在 `server/` 运行：
+需要 Node.js 22+。在 `server/` 执行 `npm ci`，复制 `.env.example` 为 `.env`，给本机设置独立的 `DATA_DIR`，然后运行 `npm run dev`。没有 `TOKENDANCE_API_KEY` 时，AI 相关功能会明确降级。Web 默认访问 `http://localhost:3000`。
 
-```powershell
-npm ci
-npm run build
-npm start
-```
+Android：在 `server/` 运行 `npm run sync:android`，用 Android Studio 打开 `server/android/`，构建 `assembleDebug`。小程序：在 `miniprogram/` 运行 `npm ci`、`npm run build:weapp`，用微信开发者工具导入。
 
-网站默认地址是 `http://localhost:3000`。Android 模拟器访问电脑上的服务填 `http://10.0.2.2:3000`；真机需要填电脑在同一局域网中的地址，并允许相应防火墙端口。生产部署使用 HTTPS，把模型密钥放在服务器环境变量中；`server/.env` 已被 Git 忽略。网页自由输入在没有密钥时会退回本地解析。
+## GitHub Release
 
-## 验证
+在仓库的 **Actions → Publish Android trial release → Run workflow** 中填写版本标签（如 `v0.1.0`）和当时有效的 HTTPS 后端地址。工作流构建带有该默认地址的 APK，并创建含 APK、[版本说明](RELEASE_NOTES.md)和 GitHub 自动生成源码包的预发布版。工作流仅在推送到 GitHub 且仓库允许 Actions 写入 Release 后可用。
 
-```powershell
-cd server
-npm run typecheck
-npm test
-npm run build
-# 先 npm start，然后在另一个终端运行：
-node --import tsx tests/community.integration.ts
-cd ..
-.\gradlew.bat :app:assembleDebug --no-configuration-cache
-```
-
-集成脚本会创建三个测试账号和测试房间。SQLite 数据保存在 `server/data/`，不进入 Git。当前为单实例原型，公开发布前仍需补充登录限频、邀请码失效与撤销、意愿去重、通知待发箱、删除策略和真机体验测试。
+服务端环境变量见 [示例](server/.env.example)，本地示例步骤见 [DEMO](server/DEMO.md)。

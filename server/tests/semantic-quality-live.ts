@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import path from 'node:path';
 
-assert.ok(process.env.DATA_DIR?.includes('zhoumoju-real-'),'Use an isolated real-model database');
+const dataDir=process.env.DATA_DIR;
+if(!dataDir?.includes('zhoumoju-real-'))throw Error('Use an isolated real-model database');
 const base=`http://127.0.0.1:${process.env.TEST_PORT??3130}/api`;
-const db=new Database(path.join(process.env.DATA_DIR,'weekend.db'),{readonly:true});
+const db=new Database(path.join(dataDir,'weekend.db'),{readonly:true});
 const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 function client(){let cookie='';return async(route:string,body?:unknown)=>{const response=await fetch(base+route,{method:body===undefined?'GET':'POST',headers:{...(cookie?{Cookie:cookie}:{}),...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)});cookie=response.headers.get('set-cookie')?.split(';',1)[0]??cookie;return {status:response.status,data:await response.json() as any};};}
-const [a,b]=[client(),client()],stamp=Date.now(),users=[];
+const [a,b]=[client(),client()],stamp=Date.now(),users:string[]=[];
 for(const [index,call] of [a,b].entries()){const result=await call('/register',{username:`quality_${stamp}_${index}`,name:`质量测试${index}`,password:'test-password-123'});assert.equal(result.status,201);users.push(result.data.user.id as string);}
 const circle=await a('/circles',{name:'真实模型质量隔离测试'});assert.equal(circle.status,201);assert.equal((await b('/circles/join',{code:circle.data.joinCode})).status,200);
 async function room(title:string){const result=await a('/rooms',{mode:'blank',title,circleId:circle.data.id,inviteeIds:[users[1]],date:'待定',timeWindow:'unsure',area:'',food:'简餐',play:'徒步',secondPlay:null,rounds:1,order:'either',after:false,budget:{meal:null,play1:null,play2:null,after:null},note:''});assert.equal(result.status,201,JSON.stringify(result.data));assert.equal((await b(`/rooms/${result.data.id}/join`,{})).status,200);return result.data.id as string;}
