@@ -10,7 +10,7 @@ export async function apiRequest<T>(path:string,method="GET",body?:unknown):Prom
   if(native&&!base)throw Error("请先配置后端地址");
   const token=getAccessToken();
   let response:Response;
-  try{response=await fetch(`${base}/api${path}`,{method,credentials:"same-origin",cache:"no-store",headers:{...(body===undefined?{}:{"Content-Type":"application/json"}),...(native?{"X-Client-Platform":"android"}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});}
+  try{response=await fetch(`${base}/api${path}`,{method,credentials:"same-origin",cache:"no-store",headers:{...(body===undefined?{}:{"Content-Type":"application/json"}),...(native?{"X-Client-Platform":"android"}:{}),...(base.includes(".ngrok-free.")?{"ngrok-skip-browser-warning":"true"}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});}
   catch{throw Error("网络连接失败，请检查后端地址和网络状态");}
   let data:ApiResponse & T;
   try{data=await response.json() as ApiResponse & T;}catch{throw Error("服务暂时不可用，请稍后重试");}

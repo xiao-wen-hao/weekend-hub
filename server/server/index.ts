@@ -29,7 +29,7 @@ app.use((req,res,next)=>{
   if(origin&&mobileOrigins.has(origin)){
     res.setHeader("Access-Control-Allow-Origin",origin);
     res.setHeader("Vary","Origin");
-    res.setHeader("Access-Control-Allow-Headers","Content-Type, Authorization, X-Client-Platform");
+    res.setHeader("Access-Control-Allow-Headers","Content-Type, Authorization, X-Client-Platform, ngrok-skip-browser-warning");
     res.setHeader("Access-Control-Allow-Methods","GET, POST, PATCH, PUT, DELETE, OPTIONS");
   }
   if(req.method==="OPTIONS")return res.sendStatus(origin&&mobileOrigins.has(origin)?204:403);
