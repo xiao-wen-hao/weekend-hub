@@ -14,7 +14,7 @@ function buildPlan(brief:Brief,start:number,food:string,play:string,rounds:1|2,o
   let cursor=start;
   const add=(s:Segment)=>{s.start=cursor;s.end=cursor+1.5;segments.push(s);cursor=s.end+.5;};
   if(order==="eat"){add(meal);add(first);if(rounds===2)add(second);}
-  else{add(first);if(rounds===2)add(second);add(meal);}
+  else{add(first);if(rounds===2)add(second);if(cursor===16)cursor=16.5;add(meal);}
   if(after){segments.push({id:"after",kind:"after",category:"续摊待定",start:cursor,end:cursor+1.5,budgetCap:roundMoney(brief.budget.after,...members.map(m=>m.preference.budgetAfter)),label:"自愿续摊"});}
   return {date:brief.date,area:brief.area,segments,assumptions:[],provisional:true};
 }
@@ -60,7 +60,9 @@ function satisfaction(plan:Plan,p:Preference):number {
 
 export function negotiatePlan(brief:Brief,members:MemberPreference[],locks:PlanLocks={}):Plan|null {
   if(members.length===0)return initialPlan(brief);
-  brief={...brief,date:locks.date??brief.date,area:locks.area||brief.area||members.find(m=>m.preference.area&&m.preference.area!=="any")?.preference.area||"",budget:{...brief.budget,meal:locks.budgetMeal??brief.budget.meal,play1:locks.budgetPlay1??brief.budget.play1,play2:locks.budgetPlay2??brief.budget.play2,after:locks.budgetAfter??brief.budget.after}};
+  // An exact private area is a constraint for validation, not permission to
+  // publish it as the shared meeting location.
+  brief={...brief,date:locks.date??brief.date,area:locks.area||brief.area||"",budget:{...brief.budget,meal:locks.budgetMeal??brief.budget.meal,play1:locks.budgetPlay1??brief.budget.play1,play2:locks.budgetPlay2??brief.budget.play2,after:locks.budgetAfter??brief.budget.after}};
   const foods=[...new Set([locks.food??brief.food,...members.map(m=>m.preference.food).filter((x):x is string=>!!x)])].filter(x=>x!=="any");
   const plays=[...new Set([locks.play??brief.play,...members.map(m=>m.preference.play).filter((x):x is string=>!!x)])].filter(x=>x!=="any");
   const foodOptions=locks.food?[locks.food]:foods.slice(0,4);

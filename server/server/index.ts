@@ -9,7 +9,7 @@ import { activePoll, closePoll, createPoll, currentPlan, emitEvent, getMembers, 
 import { initialPlan, nextQuestion, conflictQuestion, validatePreferencePatch, finalizationMissing,negotiatePlan } from "../shared/planner";
 import type { Brief, Plan, PlanLocks, Preference, Question } from "../shared/domain";
 import { FOODS, PLAYS, START_WINDOWS } from "../shared/domain";
-import { interpret } from "./language";
+import { interpret, fallback as fallbackLanguage } from "./language";
 import community from "./community";
 import management from "./management";
 import notification,{enqueueNotification} from "./notification";
@@ -176,11 +176,20 @@ app.post('/api/rooms/:id/share',(req,res)=>{
   if(req.body.explicitApproval!==true||!publicText||publicText.length>300)return fail(res,'请确认将展示的具体内容，限 300 字');
   if(sourceMessageId&&!db.prepare("SELECT 1 FROM messages WHERE id=? AND room_id=? AND user_id=? AND role='user'").get(sourceMessageId,access.room.id,access.user.id))return fail(res,'只能选择自己的私人原话',403);
   const shareId=uid();
+  const approvedArea=access.room.created_by===access.user.id&&/(?:在|约在|定在).{2,25}(?:附近集合|集合|附近)/.test(publicText)&&!/不想|不要|不去/.test(publicText)?fallbackLanguage(publicText).patch.area??null:null;
+  let areaUpdated=false;
   db.transaction(()=>{
     db.prepare('INSERT INTO room_public_shares(id,room_id,author_id,source_message_id,public_text,created_at) VALUES(?,?,?,?,?,?)').run(shareId,access.room.id,access.user.id,sourceMessageId||null,publicText,now());
+    const fresh=getRoom(access.room.id),current=currentPlan(access.room.id);
+    if(approvedArea&&fresh&&current&&!current.plan.area&&!activePoll(fresh.id)&&fresh.phase!=='final'&&!fresh.coordination_pending){
+      const locks=JSON.parse(fresh.locks_json) as PlanLocks;
+      const updated=db.prepare("UPDATE rooms SET locks_json=?,revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,phase='discussing',updated_at=? WHERE id=? AND revision=? AND coordination_pending=0").run(JSON.stringify({...locks,area:approvedArea}),now(),fresh.id,fresh.revision);
+      areaUpdated=!!updated.changes;
+    }
     emitEvent(access.room.id,'share',`${access.user.display_name}主动公开分享了一条想法。`);
     refreshBulletin(access.room.id);
   })();
+  if(areaUpdated)scheduleRoom(access.room.id);
   startBlankPlanFromPublicShares(access.room.id);
   void annotatePublicShare(shareId);
   void updatePublicGuidance(access.room.id);
@@ -341,16 +350,16 @@ app.post('/api/rooms/:id/coordination/plan',(req,res)=>{
   if(access.room.created_by!==access.user.id)return fail(res,'只有讨论发起人可以采用方案建议',403);
   const key=String(req.body.key??''),option=modelPlanOption(access.room.id,key);
   if(!option)return fail(res,'AI 建议已更新，请刷新后重试',409);
-  if(option.unresolvedMemberIds.length)return fail(res,'仍有成员的条件未满足，请先继续协商',409);
+  if(!option.canDraft)return fail(res,'仍有硬性冲突或关键信息未定，请先继续协商',409);
   if(!option.date&&!option.startHour&&!option.activity&&!option.area)return fail(res,'这条建议尚不够具体，请先继续讨论',409);
   if(option.activity&&!PLAYS.includes(option.activity as typeof PLAYS[number]))return fail(res,'建议的活动类别暂不支持',409);
   if(option.date){const day=new Date(`${option.date}T00:00:00Z`).getTime(),today=Date.now();if(!Number.isFinite(day)||day<today-86400000||day>today+60*86400000)return fail(res,'建议的日期不在可安排范围内',409);}
-  if(option.area&&!db.prepare("SELECT 1 FROM room_public_shares WHERE room_id=? AND instr(public_text,?)>0 UNION SELECT 1 FROM messages WHERE room_id=? AND role='user' AND instr(body,?)>0 LIMIT 1").get(access.room.id,option.area,access.room.id,option.area))return fail(res,'建议区域缺少成员表达依据',409);
+  if(option.area&&!db.prepare("SELECT 1 FROM room_public_shares WHERE room_id=? AND instr(public_text,?)>0 LIMIT 1").get(access.room.id,option.area))return fail(res,'建议区域缺少已授权的公开依据',409);
   const outcome=db.transaction(()=>{
     const room=getRoom(access.room.id)!;
     if(room.phase==='final'||room.phase==='closed'||room.coordination_pending||activePoll(room.id)||!modelPlanOption(room.id,key))return false;
     const brief=JSON.parse(room.brief_json) as Brief,prior=JSON.parse(room.locks_json) as PlanLocks;
-    const locks:PlanLocks={...prior,...(option.date?{date:option.date}:{}),...(option.startHour!==null?{start:option.startHour}:{}),...(option.activity?{play:option.activity}:{}),...(option.area?{area:option.area}:{})};
+    const locks:PlanLocks={...prior,rounds:prior.rounds??brief.rounds,...(option.date?{date:option.date}:{}),...(option.startHour!==null?{start:option.startHour,order:'play' as const}:{}),...(option.activity?{play:option.activity}:{}),...(option.area?{area:option.area}:{})};
     if(JSON.stringify(locks)===JSON.stringify(prior))return false;
     if(!negotiatePlan(brief,getMembers(room.id),locks))return false;
     const changed=db.prepare("UPDATE rooms SET locks_json=?,date=?,revision=revision+1,coordination_epoch=coordination_epoch+1,coordination_pending=1,phase='discussing',updated_at=? WHERE id=? AND revision=? AND phase!='final' AND coordination_pending=0").run(JSON.stringify(locks),locks.date??room.date,now(),room.id,room.revision);

@@ -112,7 +112,7 @@ export function pollOptions(facet:string,plan:Plan,brief:Brief,members:MemberPre
   if(facet==="order")return {question:"先吃再玩，还是先玩再吃？",options:[{id:"eat",label:"先吃再玩",value:"eat"},{id:"play",label:"先玩再吃",value:"play"}]};
   if(facet==="rounds")return {question:"这次玩几场？",options:[{id:"1",label:"一场刚好",value:1},{id:"2",label:"想玩两场",value:2}]};
   if(facet==="area"){
-    const areas=[brief.area,...members.map(m=>m.preference.area).filter((v):v is string=>!!v&&v!=="any")].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).slice(0,3);
+    const areas=[brief.area].filter(Boolean).slice(0,3);
     if(areas.length<2)areas.push("区域待定");
     return {question:"大致在哪片区域活动？",options:areas.map(v=>({id:v,label:v,value:v}))};
   }

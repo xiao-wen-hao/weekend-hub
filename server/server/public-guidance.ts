@@ -1,5 +1,6 @@
 import {db,now} from './db';
 import {refreshBulletin} from './bulletin';
+import {scheduleSemanticCoordination} from './semantic-coordination';
 
 type Share={id:string;author_id:string;public_text:string};
 type Guidance={consensusIds:string[];conflictIds:string[];nextFacet:'date'|'area'|'budget'|'activity'|'none';source:'model'};
@@ -39,6 +40,7 @@ export async function updatePublicGuidance(roomId:string,attempt=0){
       saved=true;
       refreshBulletin(roomId);
     })();
+    if(saved)scheduleSemanticCoordination(roomId);
   }catch{/* Keep the last source-backed bulletin if the model is unavailable. */}
   finally{
     running.delete(roomId);

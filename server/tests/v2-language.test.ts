@@ -16,3 +16,10 @@ test("negation about lateness does not veto the named activity",()=>{
   assert.equal(result.patch.play,"徒步");
   assert.equal(result.patch.vetoPlay,undefined);
 });
+
+test('explicit meeting area and segment budgets survive a model fallback',()=>{
+  const result=fallback('我们在九龙湾公园附近集合，吃饭人均预算100元，第一场徒步人均预算50元');
+  assert.equal(result.patch.area,'九龙湾公园附近');
+  assert.equal(result.patch.budgetMeal,100);
+  assert.equal(result.patch.budgetPlay1,50);
+});

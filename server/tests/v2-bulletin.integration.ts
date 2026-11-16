@@ -40,6 +40,15 @@ try{
   const debugDb=new Database(join(directory,'weekend.db'),{readonly:true});const debugRoom=debugDb.prepare('SELECT mode,brief_json AS brief,coordination_pending AS pending FROM rooms WHERE id=?').get(id);debugDb.close();
   assert.ok(proposal.plan.segments.some((s:any)=>s.category==='徒步'),JSON.stringify({segments:proposal.plan.segments,room:debugRoom}));
   assert.ok(!JSON.stringify(proposal).includes('秘密标记739'));
-  const raw=new Database(join(directory,'weekend.db'),{readonly:true});assert.equal((raw.prepare('SELECT COUNT(*) AS n FROM room_public_shares WHERE room_id=?').get(id) as {n:number}).n,2);assert.equal((raw.prepare('SELECT COUNT(*) AS n FROM messages WHERE room_id=?').get(id) as {n:number}).n,2);raw.close();
+  const secretArea='隐私公园附近';
+  assert.equal((await call(host,`/rooms/${id}/message`,{text:`我想在${secretArea}集合`})).status,200);
+  let afterPrivate:any;for(let i=0;i<50;i++){afterPrivate=(await call<any>(guest,`/rooms/${id}`)).data;if(!afterPrivate.room.coordinationPending)break;await sleep(100);}
+  assert.ok(!JSON.stringify(afterPrivate).includes(secretArea),'private area must not enter another member view or public proposal');
+  const publicArea='九龙湾公园附近';
+  assert.equal((await call(host,`/rooms/${id}/share`,{publicText:`建议在${publicArea}集合`,explicitApproval:true})).status,200);
+  let afterPublic:any;for(let i=0;i<50;i++){afterPublic=(await call<any>(guest,`/rooms/${id}`)).data;if(!afterPublic.room.coordinationPending&&afterPublic.proposal?.plan.area===publicArea)break;await sleep(100);}
+  assert.equal(afterPublic.proposal?.plan.area,publicArea,'explicitly shared area may enter a new public plan');
+  assert.ok(afterPublic.proposal.version>proposal.version,'approved public area creates a new proposal version');
+  const raw=new Database(join(directory,'weekend.db'),{readonly:true});assert.equal((raw.prepare('SELECT COUNT(*) AS n FROM room_public_shares WHERE room_id=?').get(id) as {n:number}).n,3);assert.equal((raw.prepare("SELECT COUNT(*) AS n FROM messages WHERE room_id=? AND role='user'").get(id) as {n:number}).n,2);raw.close();
   console.log(JSON.stringify({ok:true,roomId:id,blank:true,privateDefault:true,explicitShare:true,sourceAudit:true,bulletinVersions:history.data.bulletins.length}));
-}finally{if(backend){backend.kill();await new Promise(resolve=>{if(backend!.exitCode!==null)return resolve(null);backend!.once('exit',resolve);setTimeout(()=>resolve(null),2000);});}if(directory.startsWith(tmpdir()+sep))rmSync(directory,{recursive:true,force:true});}
+}finally{if(backend){backend.kill();await new Promise(resolve=>{if(backend!.exitCode!==null)return resolve(null);backend!.once('exit',resolve);setTimeout(()=>resolve(null),2000);});}if(directory.startsWith(tmpdir()+sep))try{rmSync(directory,{recursive:true,force:true,maxRetries:5,retryDelay:150});}catch(error){if((error as NodeJS.ErrnoException).code!=='EBUSY')throw error;console.warn('Temporary SQLite test directory is still locked and was retained:',directory);}}

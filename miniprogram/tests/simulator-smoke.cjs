@@ -30,7 +30,7 @@ const automator=require('miniprogram-automator');
       await questionInput.input(process.env.TEST_ANSWER);
       const replyButton=await page.$('.coordination-card .active-btn');assert.ok(replyButton,'question has a response action');
       await replyButton.tap();
-      let cleared=false;for(let i=0;i<12;i++){await page.waitFor(500);if(!(await page.$('.coordination-input'))){cleared=true;break;}}
+      let cleared=false;for(let i=0;i<60;i++){await page.waitFor(500);page=await mini.currentPage();if(!(await page.$('.coordination-input'))){cleared=true;break;}}
       assert.ok(cleared,'answered question is removed from pending UI');
     }
     if(process.env.TEST_CHAT){
@@ -41,7 +41,7 @@ const automator=require('miniprogram-automator');
       const composer=await composerView.$('input');assert.ok(composer);
       await composer.input(process.env.TEST_CHAT);
       const send=await composerView.$('.send');assert.ok(send);await send.tap();
-      let saved=false;for(let i=0;i<12;i++){await page.waitFor(500);const root=await page.$('.room-page');if((await root.text()).includes(process.env.TEST_CHAT)){saved=true;break;}}
+      let saved=false;for(let i=0;i<60;i++){await page.waitFor(500);page=await mini.currentPage();const root=await page.$('.room-page');if((await root.text()).includes(process.env.TEST_CHAT)){saved=true;break;}}
       assert.ok(saved,'private message appears in simulator room');
     }
     if(process.env.TEST_SCREENSHOT)await mini.screenshot({path:process.env.TEST_SCREENSHOT});

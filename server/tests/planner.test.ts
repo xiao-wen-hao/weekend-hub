@@ -30,6 +30,14 @@ test("时间冲突时不伪造可行方案",()=>{
   assert.equal(negotiatePlan(brief,members),null);
 });
 
+test("14 点一场徒步后可安排 16:30 用餐，不凭空增加第二场",()=>{
+  const plan=negotiatePlan({...brief,rounds:1,order:"either"},[{userId:"a",name:"A",preference:{}},{userId:"b",name:"B",preference:{}}],{start:14,order:"play",rounds:1});
+  assert.ok(plan);
+  assert.deepEqual(plan.segments.map(s=>s.id),["play1","meal"]);
+  assert.equal(plan.segments[0].start,14);
+  assert.equal(plan.segments[1].start,16.5);
+});
+
 test("追问跟随当前草案，不预设晚上",()=>{
   const q=nextQuestion(initialPlan(brief),{});
   assert.match(q?.prompt??"",/10:00/);

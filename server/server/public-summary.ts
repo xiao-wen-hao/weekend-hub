@@ -2,6 +2,7 @@ import {db,now} from './db';
 import {refreshBulletin} from './bulletin';
 import {validatePublicAnnotation} from './public-summary-validation';
 import type {Annotation} from './public-summary-validation';
+import {scheduleSemanticCoordination} from './semantic-coordination';
 
 async function classifyPublicText(text:string):Promise<Annotation>{
   const fallback:Annotation={kind:/不同意|不合适|不想|太远|太贵|冲突/.test(text)?'disagreement':'provisional',excerpt:text.slice(0,120),source:'fallback'};
@@ -23,12 +24,14 @@ export async function annotatePublicShare(shareId:string){
     const row=db.prepare('SELECT id,room_id AS roomId,public_text AS publicText FROM room_public_shares WHERE id=?').get(shareId) as {id:string;roomId:string;publicText:string}|undefined;
     if(!row||db.prepare('SELECT 1 FROM room_share_annotations WHERE share_id=?').get(shareId))return;
     const annotation=await classifyPublicText(row.publicText);
-    db.transaction(()=>{
+    const updated=db.transaction(()=>{
       const current=db.prepare('SELECT public_text AS publicText FROM room_public_shares WHERE id=?').get(shareId) as {publicText:string}|undefined;
-      if(current?.publicText!==row.publicText)return;
+      if(current?.publicText!==row.publicText)return false;
       db.prepare('INSERT OR IGNORE INTO room_share_annotations(share_id,room_id,kind,excerpt,source,created_at) VALUES(?,?,?,?,?,?)').run(row.id,row.roomId,annotation.kind,annotation.excerpt,annotation.source,now());
       refreshBulletin(row.roomId);
+      return true;
     })();
+    if(updated)scheduleSemanticCoordination(row.roomId);
   }finally{inFlight.delete(shareId);}
 }
 export function recoverPublicSummaries(){

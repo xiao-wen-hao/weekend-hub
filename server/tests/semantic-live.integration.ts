@@ -32,6 +32,19 @@ try{
   const forA=(await a(`/rooms/${roomId}`)).data,forB=(await b(`/rooms/${roomId}`)).data;
   assert.ok(!JSON.stringify(forA).includes(bText));assert.ok(!JSON.stringify(forB).includes(aText));
   if(process.env.STOP_BEFORE_ANSWER){console.log(JSON.stringify({fixture:true,roomId,accounts:ids.map((_,i)=>`semantic_${stamp}_${i}`),password:'test-password-123'}));process.exit(0);}
+  if(process.env.FULL_RESOLVE){
+    const aQuestion=forA.coordination.question;assert.ok(aQuestion);
+    assert.equal((await a(`/rooms/${roomId}/coordination/${aQuestion.id}/answer`,'POST',{text:'我周日也可以参加，下午14点出发可以，周日上班的安排已经调整好了。'})).status,200);
+    for(const [client,text] of [[b,'我周日14点出发也可以，下午有空。'],[c,'周日下午14点出发可以，我能接受轻松徒步和一小时内的交通。'],[d,'周日下午14点可以参加，九点以后出发都可以。']] as const)assert.equal((await client(`/rooms/${roomId}/message`,'POST',{text})).status,200);
+    let resolved:any;for(let i=0;i<300;i++){const current=db.prepare('SELECT status,content_json AS content FROM room_semantic_analysis WHERE room_id=?').get(roomId) as {status:string;content:string|null};resolved=current.status==='ready'&&current.content?JSON.parse(current.content):null;if(resolved?.conflicts?.length===0&&resolved?.alternatives?.some((x:any)=>x.date&&x.startHour===14))break;await new Promise(resolve=>setTimeout(resolve,500));}
+    assert.ok(resolved?.conflicts?.length===0&&resolved?.alternatives?.some((x:any)=>x.date&&x.startHour===14),'real model should produce a Sunday afternoon draft while retaining unresolved preferences');
+    const host=(await a(`/rooms/${roomId}`)).data;const option=host.coordination.alternatives.find((x:any)=>x.canDraft&&x.startHour===14);assert.ok(option);
+    const adopt=await a(`/rooms/${roomId}/coordination/plan`,'POST',{key:option.key});assert.equal(adopt.status,200,JSON.stringify(adopt.data));
+    let proposal:any;for(let i=0;i<100;i++){proposal=(await a(`/rooms/${roomId}`)).data.proposal;if(proposal)break;await new Promise(resolve=>setTimeout(resolve,100));}assert.ok(proposal?.id,'model option creates proposal');
+    assert.equal(proposal.plan.segments[0].kind,'play');assert.equal(proposal.plan.segments[0].start,14);
+    console.log(JSON.stringify({resolved:true,roomId,analysis:resolved,proposalId:proposal.id,version:proposal.version}));
+    process.exit(0);
+  }
   const target=questions.find((q:any)=>q.status==='pending') as {userId:string}|undefined;assert.ok(target);
   const client=clients[ids.indexOf(target.userId)],own=(await client(`/rooms/${roomId}`)).data;
   const answer=await client(`/rooms/${roomId}/coordination/${own.coordination.question.id}/answer`,'POST',{text:'如果大家只能周日，我可以考虑周日下午，但上午不行。'});assert.equal(answer.status,200,JSON.stringify(answer.data));
