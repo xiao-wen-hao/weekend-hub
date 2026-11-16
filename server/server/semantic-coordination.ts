@@ -20,10 +20,10 @@ const retryCounts=new Map<string,{signature:string;count:number}>();
 
 export function coordinationContext(roomId:string):Context|null{
   const room=getRoom(roomId);if(!room||room.phase==='final'||room.phase==='closed')return null;
-  const members=db.prepare('SELECT m.user_id AS id,u.display_name AS name,m.decision_status AS decisionStatus FROM members m JOIN users u ON u.id=m.user_id WHERE m.room_id=? ORDER BY m.joined_at').all(roomId) as Context['members'];
+  const members=db.prepare("SELECT m.user_id AS id,u.display_name AS name,m.decision_status AS decisionStatus FROM members m JOIN users u ON u.id=m.user_id WHERE m.room_id=? AND m.decision_status!='no' ORDER BY m.joined_at").all(roomId) as Context['members'];
   if(members.length<2)return null;
-  const publicSources=db.prepare('SELECT s.id,s.author_id AS memberId,s.public_text AS text,s.created_at AS createdAt FROM room_public_shares s JOIN members m ON m.room_id=s.room_id AND m.user_id=s.author_id WHERE s.room_id=? ORDER BY s.created_at DESC,s.id DESC LIMIT 30').all(roomId) as Omit<Source,'visibility'>[];
-  const privateSources=db.prepare("SELECT x.id,x.user_id AS memberId,x.body AS text,x.created_at AS createdAt FROM messages x JOIN members m ON m.room_id=x.room_id AND m.user_id=x.user_id WHERE x.room_id=? AND x.role='user' AND x.id IN (SELECT y.id FROM messages y WHERE y.room_id=x.room_id AND y.user_id=x.user_id AND y.role='user' ORDER BY y.created_at DESC,y.id DESC LIMIT 8) ORDER BY x.created_at DESC,x.id DESC LIMIT 80").all(roomId) as Omit<Source,'visibility'>[];
+  const publicSources=db.prepare("SELECT s.id,s.author_id AS memberId,s.public_text AS text,s.created_at AS createdAt FROM room_public_shares s JOIN members m ON m.room_id=s.room_id AND m.user_id=s.author_id AND m.decision_status!='no' WHERE s.room_id=? ORDER BY s.created_at DESC,s.id DESC LIMIT 30").all(roomId) as Omit<Source,'visibility'>[];
+  const privateSources=db.prepare("SELECT x.id,x.user_id AS memberId,x.body AS text,x.created_at AS createdAt FROM messages x JOIN members m ON m.room_id=x.room_id AND m.user_id=x.user_id AND m.decision_status!='no' WHERE x.room_id=? AND x.role='user' AND x.id IN (SELECT y.id FROM messages y WHERE y.room_id=x.room_id AND y.user_id=x.user_id AND y.role='user' ORDER BY y.created_at DESC,y.id DESC LIMIT 8) ORDER BY x.created_at DESC,x.id DESC LIMIT 80").all(roomId) as Omit<Source,'visibility'>[];
   const sources:Source[]=[...publicSources.map(s=>({...s,visibility:'public' as const})),...privateSources.map(s=>({...s,visibility:'private' as const}))].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));
   const proposal=currentPlan(roomId),bulletin=currentBulletin(roomId);
   const prior=db.prepare('SELECT content_json AS content FROM room_semantic_analysis WHERE room_id=?').get(roomId) as {content:string|null}|undefined;
@@ -185,9 +185,28 @@ export function ownCoordination(roomId:string,userId:string){
   const question=valid&&row?.status==='ready'?db.prepare("SELECT id,question,created_at AS createdAt FROM room_coordination_questions WHERE room_id=? AND user_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1").get(roomId,userId) as {id:string;question:string;createdAt:string}|undefined:undefined;
   const analysis=valid&&row?.status==='ready'&&row.content?JSON.parse(row.content) as Analysis:null;
   const hasHardConflict=!!analysis?.conflicts.some(conflict=>conflict.severity==='hard');
-  const alternatives=analysis?.alternatives.map((option,index)=>({key:`${row!.signature}:${index}`,date:option.date,startHour:option.startHour,activity:option.activity&&PLAYS.includes(option.activity as typeof PLAYS[number])?option.activity:null,area:option.area,unresolvedCount:option.unresolvedMemberIds.length,canDraft:!hasHardConflict&&(!option.unresolvedMemberIds.length||!!option.date&&option.startHour!==null),source:'model' as const}))??[];
-  const issues=analysis?.conflicts.map(conflict=>({kind:conflict.kind,severity:conflict.severity,needsMyAnswer:conflict.targetIds.includes(userId)}))??[];
-  return {status:valid?row!.status:'idle',question:question??null,issues,alternatives,source:analysis?.source??null};
+  const kindName:Record<ConflictKind,string>={date:'日期',time:'出发时间',area:'地点',transport:'交通距离',intensity:'活动强度',budget:'预算',activity:'活动内容',attendance:'参与安排',other:'安排'};
+  const sourceById=new Map(context?.sources.map(source=>[source.id,source])??[]);
+  const memberById=new Map(context?.members.map(member=>[member.id,member.name])??[]);
+  const issues=analysis?.conflicts.map(conflict=>{
+    const cited=conflict.sourceIds.map(id=>sourceById.get(id)).filter((source):source is Source=>!!source);
+    const publicEvidence=cited.filter(source=>source.visibility==='public').slice(0,2).map(source=>`${memberById.get(source.memberId)??'成员'}公开说「${source.text.slice(0,50)}」`);
+    const ownEvidence=cited.find(source=>source.memberId===userId);
+    return {kind:conflict.kind,label:kindName[conflict.kind],severity:conflict.severity,needsMyAnswer:conflict.targetIds.includes(userId),publicEvidence,ownContext:ownEvidence?`你提到「${ownEvidence.text.slice(0,60)}」`:null};
+  })??[];
+  const answeredCount=(db.prepare("SELECT COUNT(*) AS n FROM room_coordination_questions WHERE room_id=? AND user_id=? AND status='answered'").get(roomId,userId) as {n:number}).n;
+  const alternatives=analysis?.alternatives.map((option,index)=>{
+    const cited=option.sourceIds.map(id=>sourceById.get(id)).filter((source):source is Source=>!!source);
+    const visible=[...new Map(cited.filter(source=>source.visibility==='public'||source.memberId===userId).reverse().map(source=>[source.memberId,source])).values()].reverse().slice(0,4);
+    const evidence=visible.map(source=>{
+      const owner=source.memberId===userId?'你':memberById.get(source.memberId)??'成员';
+      const fit=option.unresolvedMemberIds.includes(source.memberId)?'仍需核对':option.satisfiedMemberIds.includes(source.memberId)?'初步可兼顾':'待确认';
+      return `${owner}：${source.visibility==='public'?'公开表达':'你的私人表达'}「${source.text.slice(0,55)}」· ${fit}`;
+    });
+    const fullyPublic=cited.length>0&&!!context?.sources.every(source=>source.visibility==='public')&&cited.every(source=>source.visibility==='public');
+    return {key:`${row!.signature}:${index}`,date:option.date,startHour:option.startHour,activity:option.activity&&PLAYS.includes(option.activity as typeof PLAYS[number])?option.activity:null,area:option.area,unresolvedCount:option.unresolvedMemberIds.length,canDraft:!hasHardConflict&&(!option.unresolvedMemberIds.length||!!option.date&&option.startHour!==null),evidence,explanation:fullyPublic?option.explanation:null,source:'model' as const};
+  })??[];
+  return {status:valid?row!.status:'idle',question:question??null,issues,alternatives,answeredCount,source:analysis?.source??null};
 }
 
 export function modelPlanOption(roomId:string,key:string):(Alternative&{canDraft:boolean})|null{

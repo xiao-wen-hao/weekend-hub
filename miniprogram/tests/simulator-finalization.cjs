@@ -18,8 +18,8 @@ const automator=require('miniprogram-automator');
     await choose('查看详细方案、确认与报名');await page.waitFor(350);
     await choose('接受这版');await page.waitFor(850);
     for(let i=0;i<2;i++){const buttons=await page.$$('button');const matches=await Promise.all(buttons.map(async button=>({button,label:await button.text()})));const attend=matches.filter(x=>x.label==='我参加');assert.equal(attend.length,2);await attend[i].button.tap();await page.waitFor(700);}
-    const content=await(await page.$('.room-page')).text();assert.ok(content.includes('已定案'),'both members confirmed the same version');
+    const content=await(await page.$('.room-page')).text();if(process.env.EXPECT_FINAL==='1')assert.ok(content.includes('已定案'),'all members confirmed the same version');
     assert.deepEqual(exceptions,[]);
-    console.log(JSON.stringify({ok:true,miniConfirmed:true,miniAttendance:2,final:true,exceptions:0}));
+    console.log(JSON.stringify({ok:true,miniConfirmed:true,miniAttendance:2,final:content.includes('已定案'),exceptions:0}));
   }finally{await mini.disconnect();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

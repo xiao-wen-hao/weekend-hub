@@ -381,7 +381,7 @@ app.post("/api/rooms/:id/decision",(req,res)=>{
     if(status==='no'&&access.room.current_proposal_id)db.prepare('DELETE FROM confirmations WHERE proposal_id=? AND user_id=?').run(access.room.current_proposal_id,access.user.id);
     finalizeIfReady(access.room.id);
     refreshBulletin(access.room.id);
-  })();res.json(publicRoom(access.room.id,access.user.id));
+  })();scheduleSemanticCoordination(access.room.id);res.json(publicRoom(access.room.id,access.user.id));
 });
 app.post("/api/rooms/:id/confirm",(req,res)=>{
   const access=roomMember(req,res);if(!access)return;
