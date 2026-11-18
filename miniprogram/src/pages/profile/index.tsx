@@ -1,0 +1,11 @@
+import {tr,getLocale,setLocale} from '../../i18n'
+import {useState} from 'react'
+import Taro,{useDidShow} from '@tarojs/taro'
+import {Button,Text,View} from '@tarojs/components'
+import {api,requireLogin,setToken,User,Summary} from '../../api'
+export default function Profile(){
+ const [user,setUser]=useState<User|null>(null),[rooms,setRooms]=useState<Summary[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true)
+ const load=async()=>{if(requireLogin('/pages/profile/index'))return;setLoading(true);try{const [u,r]=await Promise.all([api<{user:User|null}>('/me'),api<{rooms:Summary[]}>('/rooms')]);setUser(u.user);setRooms(r.rooms);setError('')}catch(e){setError(e instanceof Error?e.message:'个人信息加载失败')}finally{setLoading(false)}}
+ useDidShow(()=>{void load()})
+ return <View className='page tab-page'><View className='profile-heading'><Text className='page-title'>{tr("我的")}</Text><Button className='locale-button' onClick={()=>{void setLocale(getLocale()==='zh'?'en':'zh').then(()=>Taro.reLaunch({url:'/pages/home/index'}))}}>{tr(getLocale()==='zh'?'English':'中文')}</Button></View>{error&&<View className='alert error'>{error}<Button className='link' onClick={load}>{tr("重试")}</Button></View>}{loading?<View className='card empty'>{tr("正在加载…")}</View>:<><View className='card profile-card'><Text className='profile-avatar'>{user?.name?.slice(0,1)||'友'}</Text><View><Text className='card-title'>{user?.name||'朋友'}</Text><Text className='muted small'>@{user?.username} {tr("· 已登录")}</Text></View></View><Text className='subheading'>{tr("我的活动")}</Text><View className='profile-stats'><View><Text>{rooms.length}</Text><Text>{tr("参与讨论")}</Text></View><View><Text>{rooms.filter(x=>x.phase==='final').length}</Text><Text>{tr("已成行")}</Text></View></View><Text className='subheading'>{tr("个人空间")}</Text><View className='card compact-card' onClick={()=>Taro.switchTab({url:'/pages/circles/index'})}>{tr("我的熟人圈与意愿　›")}</View><View className='card compact-card' onClick={()=>Taro.switchTab({url:'/pages/discussions/index'})}>{tr("活动记录　›")}</View><Button className='link bottom-link' onClick={async()=>{await api('/logout','POST',{}).catch(()=>{});setToken('');Taro.reLaunch({url:'/pages/login/index'})}}>{tr("退出登录")}</Button></>}</View>
+}

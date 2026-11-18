@@ -1,6 +1,6 @@
-# Android 本地示例版
+# Android 客户端
 
-Android Studio 打开 `server/android`。这是 Capacitor 封装的 React Web 客户端；仓库根目录旧 `app` 工程不是本产品版 Android 入口。
+Android Studio 打开 `server/android`。这是 Capacitor 封装的 React Web 客户端；仓库根目录旧 `app` 工程不是当前 Android 入口。
 
 在 `server` 目录运行 `npm ci`、`npm run sync:android`，再在 `server/android` 运行 `gradlew.bat assembleDebug`。APK 位于 `server/android/app/build/outputs/apk/debug/app-debug.apk`。
 

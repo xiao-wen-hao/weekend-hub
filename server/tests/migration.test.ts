@@ -12,12 +12,12 @@ test("fresh database and existing version one database migrate without data loss
   const boot=()=>{
     const run=spawnSync(process.execPath,["--import","tsx","-e","import('./server/db.ts').then(m=>{console.log(m.db.pragma('user_version',{simple:true}));m.db.close()})"],{cwd:process.cwd(),env:{...process.env,DATA_DIR:dir},encoding:"utf8"});
     assert.equal(run.status,0,run.stderr);
-    assert.match(run.stdout,/17/);
+    assert.match(run.stdout,/19/);
   };
   try{
     boot();
     const db=new Database(file);
-    db.exec("DROP TABLE room_coordination_questions; DROP TABLE room_semantic_analysis; DROP TABLE room_public_guidance; DROP TABLE room_circle_invites; DROP TABLE room_share_annotations; DROP TABLE room_bulletins; DROP TABLE room_public_shares; DROP TABLE notification_outbox; DROP TABLE candidate_members; DROP TABLE candidates; DROP TABLE intents; DROP TABLE circle_members; DROP TABLE circles; ALTER TABLE rooms DROP COLUMN mode; ALTER TABLE rooms DROP COLUMN coordination_pending; ALTER TABLE rooms DROP COLUMN coordination_epoch; ALTER TABLE members DROP COLUMN decision_status; PRAGMA user_version=1;");
+    db.exec("DROP TABLE guest_sessions; DROP TABLE room_invite_tokens; DROP TABLE guests; DROP TABLE room_coordination_questions; DROP TABLE room_semantic_analysis; DROP TABLE room_public_guidance; DROP TABLE room_circle_invites; DROP TABLE room_share_annotations; DROP TABLE room_bulletins; DROP TABLE room_public_shares; DROP TABLE notification_outbox; DROP TABLE candidate_members; DROP TABLE candidates; DROP TABLE intents; DROP TABLE circle_members; DROP TABLE circles; ALTER TABLE rooms DROP COLUMN mode; ALTER TABLE rooms DROP COLUMN coordination_pending; ALTER TABLE rooms DROP COLUMN coordination_epoch; ALTER TABLE members DROP COLUMN decision_status; PRAGMA user_version=1;");
     db.prepare("INSERT INTO users(id,username,display_name,password_hash,salt,created_at) VALUES(?,?,?,?,?,?)").run("saved-user","saved-user","保留用户","hash","salt","2026-11-14");
     db.close();
     boot();
@@ -33,6 +33,9 @@ test("fresh database and existing version one database migrate without data loss
     assert.ok(upgraded.prepare("SELECT name FROM sqlite_master WHERE name='room_semantic_analysis'").get());
     assert.ok(upgraded.prepare("SELECT name FROM sqlite_master WHERE name='room_coordination_questions'").get());
     assert.ok(upgraded.prepare("SELECT name FROM pragma_table_info('candidate_members') WHERE name='intent_id'").get());
+    assert.ok(upgraded.prepare("SELECT name FROM pragma_table_info('intents') WHERE name='public_allowed'").get());
+    assert.ok(upgraded.prepare("SELECT name FROM pragma_table_info('members') WHERE name='guest_id'").get());
+    assert.ok(upgraded.prepare("SELECT name FROM sqlite_master WHERE name='guest_sessions'").get());
     upgraded.prepare("INSERT INTO notification_outbox(id,user_id,kind,payload_json,status,created_at,dedupe_key) VALUES(?,?,?,?,?,?,?)").run("saved-notice","saved-user","candidate","{\"candidateId\":\"saved\"}","pending","2026-11-14","candidate:saved");
     upgraded.close();
     boot();

@@ -10,11 +10,11 @@ export function buildBulletin(roomId:string):{content:BulletinContent;sources:st
   const room=getRoom(roomId);if(!room)return null;
   const proposalRow=db.prepare('SELECT id,plan_json AS planJson FROM proposals WHERE id=?').get(room.current_proposal_id) as {id:string;planJson:string}|undefined;
   const proposal=proposalRow?{id:proposalRow.id,plan:JSON.parse(proposalRow.planJson) as Plan}:null;
-  const confirmations=proposal?db.prepare("SELECT decision,COUNT(*) AS count FROM confirmations WHERE proposal_id=? GROUP BY decision").all(proposal.id) as {decision:string;count:number}[]:[];
+  const confirmations=proposal?db.prepare("SELECT c.decision,COUNT(*) AS count FROM confirmations c JOIN members m ON m.room_id=? AND m.status='active' AND (m.user_id=c.user_id OR m.guest_id=c.guest_id) WHERE c.proposal_id=? GROUP BY c.decision").all(roomId,proposal.id) as {decision:string;count:number}[]:[];
   const accepted=confirmations.find(c=>c.decision==='accept')?.count??0,rejected=confirmations.find(c=>c.decision==='reject')?.count??0;
-  const members=(db.prepare('SELECT COUNT(*) AS count FROM members WHERE room_id=?').get(roomId) as {count:number}).count;
+  const members=(db.prepare("SELECT COUNT(*) AS count FROM members WHERE room_id=? AND status='active'").get(roomId) as {count:number}).count;
   const poll=db.prepare("SELECT id,question FROM polls WHERE room_id=? AND status='open' ORDER BY created_at DESC LIMIT 1").get(roomId) as {id:string;question:string}|undefined;
-  const shares=(db.prepare('SELECT s.id,s.public_text,u.display_name AS name,a.kind,a.excerpt FROM room_public_shares s JOIN users u ON u.id=s.author_id LEFT JOIN room_share_annotations a ON a.share_id=s.id WHERE s.room_id=? ORDER BY s.created_at DESC,s.id DESC LIMIT 50').all(roomId) as Share[]).reverse();
+  const shares=(db.prepare('SELECT s.id,s.public_text,COALESCE(u.display_name,g.display_name) AS name,a.kind,a.excerpt FROM room_public_shares s LEFT JOIN users u ON u.id=s.author_id LEFT JOIN guests g ON g.id=s.guest_id LEFT JOIN room_share_annotations a ON a.share_id=s.id WHERE s.room_id=? ORDER BY s.created_at DESC,s.id DESC LIMIT 50').all(roomId) as Share[]).reverse();
   const guidanceRow=db.prepare('SELECT source_ids_json AS sourceIds,content_json AS content FROM room_public_guidance WHERE room_id=?').get(roomId) as {sourceIds:string;content:string}|undefined;
   const guidance=guidanceRow&&JSON.stringify(shares.slice(-30).map(s=>s.id))===guidanceRow.sourceIds?JSON.parse(guidanceRow.content) as {consensusIds:string[];conflictIds:string[];nextFacet:string;source:string}:null;
   const pair=(ids:string[])=>ids.map(id=>shares.find(s=>s.id===id)?.public_text.slice(0,90)).filter(Boolean);

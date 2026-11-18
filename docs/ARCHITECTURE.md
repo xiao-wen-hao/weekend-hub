@@ -26,4 +26,4 @@ flowchart LR
 | `miniprogram/src/pages/` | 小程序页面；入口在 `app.config.ts` |
 | `server/android/` / `server/capacitor.config.ts` | Android 工程和封装配置 |
 
-服务端在请求时核查用户、圈子或房间成员身份。`rooms.current_proposal_id`、`proposals.version`、确认和报名存于 SQLite；异步任务写入前再核对版本或签名，避免旧任务覆盖新方案。单机 SQLite 与内存调度适合项目及小范围试用，不是多实例部署架构。见 [数据与 API](DATABASE_AND_API.md)、[LLM](LLM.md)、[开发指南](DEVELOPMENT.md)。
+服务端在请求时核查用户、圈子或房间成员身份。`rooms.current_proposal_id`、`proposals.version`、确认和报名存于 SQLite；异步任务写入前再核对版本或签名，避免旧任务覆盖新方案。单机 SQLite 与内存调度适合小范围部署，不是多实例部署架构。见 [数据与 API](DATABASE_AND_API.md)、[LLM](LLM.md)、[开发指南](DEVELOPMENT.md)。

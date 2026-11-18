@@ -62,7 +62,7 @@ export function fallback(text:string):Interpretation {
 export async function interpret(text:string,plan:Plan|null,recent:string[]):Promise<Interpretation> {
   const key=process.env.TOKENDANCE_API_KEY;
   if(!key)return fallback(text);
-  const base=(process.env.TOKENDANCE_BASE_URL??"https://your-model-provider.example/gateway/v1").replace(/\/$/,"");
+  const base=(process.env.TOKENDANCE_BASE_URL??"").replace(/\/$/,"");
   const model=process.env.TOKENDANCE_MODEL??"deepseek-v4.1-flash-1017";
   try{
     const response=await fetch(`${base}/chat/completions`,{

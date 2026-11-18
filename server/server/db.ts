@@ -144,6 +144,61 @@ if(version<16){db.transaction(()=>{db.exec(migration16);db.pragma("user_version 
 // A candidate can connect different structured categories when the model
 // finds the same underlying activity. Existing candidates keep legacy checks.
 if(version<17){db.transaction(()=>{db.exec('ALTER TABLE candidate_members ADD COLUMN intent_id TEXT REFERENCES intents(id);');db.pragma('user_version = 17');})();}
+if(version<18){db.transaction(()=>{db.exec('ALTER TABLE intents ADD COLUMN public_allowed INTEGER NOT NULL DEFAULT 0 CHECK(public_allowed IN (0,1)); CREATE INDEX idx_intents_public ON intents(circle_id,public_allowed,created_at);');db.pragma('user_version = 18');})();}
+
+// Guest identities are room-scoped participants. Formal users and their tables
+// remain unchanged; only records authored by a room participant accept a guest.
+const migration19=`
+CREATE TABLE guests(id TEXT PRIMARY KEY,display_name TEXT NOT NULL,linked_user_id TEXT REFERENCES users(id),created_at TEXT NOT NULL,linked_at TEXT);
+CREATE TABLE guest_sessions(token_hash TEXT PRIMARY KEY,guest_id TEXT NOT NULL REFERENCES guests(id),expires_at TEXT NOT NULL,revoked_at TEXT,created_at TEXT NOT NULL);
+CREATE TABLE room_invite_tokens(id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id),token_hash TEXT NOT NULL UNIQUE,created_by TEXT NOT NULL REFERENCES users(id),expires_at TEXT NOT NULL,revoked_at TEXT,created_at TEXT NOT NULL);
+CREATE TABLE members_new(room_id TEXT NOT NULL REFERENCES rooms(id),user_id TEXT REFERENCES users(id),guest_id TEXT REFERENCES guests(id),joined_at TEXT NOT NULL,decision_status TEXT NOT NULL DEFAULT 'undecided' CHECK(decision_status IN ('undecided','yes','no')),status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','merged','left')),merged_into_user_id TEXT REFERENCES users(id),CHECK((user_id IS NULL)!=(guest_id IS NULL)),UNIQUE(room_id,user_id),UNIQUE(room_id,guest_id));
+INSERT INTO members_new(room_id,user_id,joined_at,decision_status) SELECT room_id,user_id,joined_at,decision_status FROM members;
+DROP TABLE members;
+ALTER TABLE members_new RENAME TO members;
+CREATE TABLE preferences_new(room_id TEXT NOT NULL REFERENCES rooms(id),user_id TEXT REFERENCES users(id),guest_id TEXT REFERENCES guests(id),data_json TEXT NOT NULL DEFAULT '{}',updated_at TEXT NOT NULL,CHECK((user_id IS NULL)!=(guest_id IS NULL)),UNIQUE(room_id,user_id),UNIQUE(room_id,guest_id));
+INSERT INTO preferences_new(room_id,user_id,data_json,updated_at) SELECT room_id,user_id,data_json,updated_at FROM preferences;
+DROP TABLE preferences;
+ALTER TABLE preferences_new RENAME TO preferences;
+CREATE TABLE messages_new(id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id),user_id TEXT REFERENCES users(id),guest_id TEXT REFERENCES guests(id),role TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL,CHECK((user_id IS NULL)!=(guest_id IS NULL)));
+INSERT INTO messages_new(id,room_id,user_id,role,body,created_at) SELECT id,room_id,user_id,role,body,created_at FROM messages;
+DROP TABLE messages;
+ALTER TABLE messages_new RENAME TO messages;
+CREATE INDEX idx_messages_private ON messages(room_id,user_id,created_at);
+CREATE INDEX idx_messages_guest ON messages(room_id,guest_id,created_at);
+CREATE TABLE confirmations_new(proposal_id TEXT NOT NULL REFERENCES proposals(id),user_id TEXT REFERENCES users(id),guest_id TEXT REFERENCES guests(id),decision TEXT NOT NULL,updated_at TEXT NOT NULL,CHECK((user_id IS NULL)!=(guest_id IS NULL)),UNIQUE(proposal_id,user_id),UNIQUE(proposal_id,guest_id));
+INSERT INTO confirmations_new(proposal_id,user_id,decision,updated_at) SELECT proposal_id,user_id,decision,updated_at FROM confirmations;
+DROP TABLE confirmations;
+ALTER TABLE confirmations_new RENAME TO confirmations;
+CREATE TABLE poll_votes_new(poll_id TEXT NOT NULL REFERENCES polls(id),user_id TEXT REFERENCES users(id),guest_id TEXT REFERENCES guests(id),option_id TEXT NOT NULL,updated_at TEXT NOT NULL,CHECK((user_id IS NULL)!=(guest_id IS NULL)),UNIQUE(poll_id,user_id),UNIQUE(poll_id,guest_id));
+INSERT INTO poll_votes_new(poll_id,user_id,option_id,updated_at) SELECT poll_id,user_id,option_id,updated_at FROM poll_votes;
+DROP TABLE poll_votes;
+ALTER TABLE poll_votes_new RENAME TO poll_votes;
+CREATE TABLE attendance_new(proposal_id TEXT NOT NULL REFERENCES proposals(id),segment_id TEXT NOT NULL,user_id TEXT REFERENCES users(id),guest_id TEXT REFERENCES guests(id),decision TEXT NOT NULL,updated_at TEXT NOT NULL,CHECK((user_id IS NULL)!=(guest_id IS NULL)),UNIQUE(proposal_id,segment_id,user_id),UNIQUE(proposal_id,segment_id,guest_id));
+INSERT INTO attendance_new(proposal_id,segment_id,user_id,decision,updated_at) SELECT proposal_id,segment_id,user_id,decision,updated_at FROM attendance;
+DROP TABLE attendance;
+ALTER TABLE attendance_new RENAME TO attendance;
+CREATE TABLE room_public_shares_new(id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id),author_id TEXT REFERENCES users(id),guest_id TEXT REFERENCES guests(id),source_message_id TEXT REFERENCES messages(id),public_text TEXT NOT NULL,created_at TEXT NOT NULL,CHECK((author_id IS NULL)!=(guest_id IS NULL)));
+INSERT INTO room_public_shares_new(id,room_id,author_id,source_message_id,public_text,created_at) SELECT id,room_id,author_id,source_message_id,public_text,created_at FROM room_public_shares;
+DROP TABLE room_public_shares;
+ALTER TABLE room_public_shares_new RENAME TO room_public_shares;
+CREATE INDEX idx_public_shares_room ON room_public_shares(room_id,created_at);
+CREATE TABLE room_coordination_questions_new(id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES rooms(id),user_id TEXT REFERENCES users(id),guest_id TEXT REFERENCES guests(id),analysis_signature TEXT NOT NULL,conflict_key TEXT NOT NULL,question TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending','answered','obsolete')),answer_message_id TEXT REFERENCES messages(id),created_at TEXT NOT NULL,answered_at TEXT,CHECK((user_id IS NULL)!=(guest_id IS NULL)));
+INSERT INTO room_coordination_questions_new(id,room_id,user_id,analysis_signature,conflict_key,question,status,answer_message_id,created_at,answered_at) SELECT id,room_id,user_id,analysis_signature,conflict_key,question,status,answer_message_id,created_at,answered_at FROM room_coordination_questions;
+DROP TABLE room_coordination_questions;
+ALTER TABLE room_coordination_questions_new RENAME TO room_coordination_questions;
+CREATE INDEX idx_room_coordination_questions_target ON room_coordination_questions(room_id,user_id,status);
+`;
+if(version<19){
+  const backup=path.join(dataDir,`weekend-pre-guest-v18-${Date.now()}.db`);
+  db.prepare('VACUUM INTO ?').run(backup);
+  db.pragma('foreign_keys = OFF');
+  try{
+    db.transaction(()=>{db.exec('DROP INDEX IF EXISTS idx_room_coordination_questions_target;');db.exec(migration19);db.pragma('user_version = 19');})();
+  }finally{db.pragma('foreign_keys = ON');}
+  const broken=db.pragma('foreign_key_check') as unknown[];
+  if(broken.length)throw Error('Guest migration foreign key check failed; restore '+backup);
+}
 
 export type RoomRow={id:string;title:string;date:string;mode:'blank'|'template';brief_json:string;phase:string;current_proposal_id:string|null;revision:number;coordination_pending:number;coordination_epoch:number;locks_json:string;created_by:string;created_at:string;updated_at:string};
 export type UserRow={id:string;username:string;display_name:string;password_hash:string;salt:string;created_at:string};
@@ -151,5 +206,5 @@ export const now=()=>new Date().toISOString();
 export const uid=()=>crypto.randomUUID();
 export const getRoom=(id:string)=>db.prepare("SELECT * FROM rooms WHERE id=?").get(id) as RoomRow|undefined;
 export const getUser=(id:string)=>db.prepare("SELECT * FROM users WHERE id=?").get(id) as UserRow|undefined;
-export const isMember=(roomId:string,userId:string)=>!!db.prepare("SELECT 1 FROM members WHERE room_id=? AND user_id=?").get(roomId,userId);
+export const isMember=(roomId:string,userId:string)=>!!db.prepare("SELECT 1 FROM members WHERE room_id=? AND user_id=? AND status='active'").get(roomId,userId);
 

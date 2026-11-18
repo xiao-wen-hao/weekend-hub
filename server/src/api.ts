@@ -1,3 +1,5 @@
+import {CapacitorHttp} from "@capacitor/core";
+
 type ApiResponse={error?:string;accessToken?:string};
 const native=import.meta.env.VITE_CLIENT_PLATFORM==="android";
 export const isNativeClient=native;
@@ -9,12 +11,18 @@ export async function apiRequest<T>(path:string,method="GET",body?:unknown):Prom
   const base=apiBase();
   if(native&&!base)throw Error("请先配置后端地址");
   const token=getAccessToken();
-  let response:Response;
-  try{response=await fetch(`${base}/api${path}`,{method,credentials:"same-origin",cache:"no-store",headers:{...(body===undefined?{}:{"Content-Type":"application/json"}),...(native?{"X-Client-Platform":"android"}:{}),...(base.includes(".ngrok-free.")?{"ngrok-skip-browser-warning":"true"}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});}
+  const url=`${base}/api${path}`;
+  const headers={...(body===undefined?{}:{"Content-Type":"application/json"}),...(native?{"X-Client-Platform":"android"}:{}),...(base.includes(".ngrok-free.")?{"ngrok-skip-browser-warning":"true"}:{}),...(token?{Authorization:`Bearer ${token}`}:{})};
+  let status:number;
+  let rawData:unknown;
+  try{
+    if(native){const response=await CapacitorHttp.request({url,method,headers,data:body===undefined?undefined:JSON.stringify(body),responseType:"json"});status=response.status;rawData=response.data;}
+    else{const response=await fetch(url,{method,credentials:"same-origin",cache:"no-store",headers,body:body===undefined?undefined:JSON.stringify(body)});status=response.status;rawData=await response.text();}
+  }
   catch{throw Error("网络连接失败，请检查后端地址和网络状态");}
   let data:ApiResponse & T;
-  try{data=await response.json() as ApiResponse & T;}catch{throw Error("服务暂时不可用，请稍后重试");}
-  if(!response.ok){if(native&&response.status===401)localStorage.removeItem(tokenKey);throw Error(data.error??`请求失败 (${response.status})`);}
+  try{data=(typeof rawData==="string"?JSON.parse(rawData):rawData) as ApiResponse & T;}catch{throw Error("服务暂时不可用，请稍后重试");}
+  if(status<200||status>=300){if(native&&status===401)localStorage.removeItem(tokenKey);throw Error(data.error??`请求失败 (${status})`);}
   if(native&&data.accessToken)localStorage.setItem(tokenKey,data.accessToken);
   if(native&&path==="/logout")localStorage.removeItem(tokenKey);
   return data;

@@ -20,10 +20,10 @@ const retryCounts=new Map<string,{signature:string;count:number}>();
 
 export function coordinationContext(roomId:string):Context|null{
   const room=getRoom(roomId);if(!room||room.phase==='final'||room.phase==='closed')return null;
-  const members=db.prepare("SELECT m.user_id AS id,u.display_name AS name,m.decision_status AS decisionStatus FROM members m JOIN users u ON u.id=m.user_id WHERE m.room_id=? AND m.decision_status!='no' ORDER BY m.joined_at").all(roomId) as Context['members'];
+  const members=db.prepare("SELECT COALESCE(m.user_id,m.guest_id) AS id,COALESCE(u.display_name,g.display_name) AS name,m.decision_status AS decisionStatus FROM members m LEFT JOIN users u ON u.id=m.user_id LEFT JOIN guests g ON g.id=m.guest_id WHERE m.room_id=? AND m.status='active' AND m.decision_status!='no' ORDER BY m.joined_at").all(roomId) as Context['members'];
   if(members.length<2)return null;
-  const publicSources=db.prepare("SELECT s.id,s.author_id AS memberId,s.public_text AS text,s.created_at AS createdAt FROM room_public_shares s JOIN members m ON m.room_id=s.room_id AND m.user_id=s.author_id AND m.decision_status!='no' WHERE s.room_id=? ORDER BY s.created_at DESC,s.id DESC LIMIT 30").all(roomId) as Omit<Source,'visibility'>[];
-  const privateSources=db.prepare("SELECT x.id,x.user_id AS memberId,x.body AS text,x.created_at AS createdAt FROM messages x JOIN members m ON m.room_id=x.room_id AND m.user_id=x.user_id AND m.decision_status!='no' WHERE x.room_id=? AND x.role='user' AND x.id IN (SELECT y.id FROM messages y WHERE y.room_id=x.room_id AND y.user_id=x.user_id AND y.role='user' ORDER BY y.created_at DESC,y.id DESC LIMIT 8) ORDER BY x.created_at DESC,x.id DESC LIMIT 80").all(roomId) as Omit<Source,'visibility'>[];
+  const publicSources=db.prepare("SELECT s.id,COALESCE(s.author_id,g.linked_user_id,s.guest_id) AS memberId,s.public_text AS text,s.created_at AS createdAt FROM room_public_shares s LEFT JOIN guests g ON g.id=s.guest_id JOIN members m ON m.room_id=s.room_id AND (m.user_id=s.author_id OR m.guest_id=s.guest_id OR m.user_id=g.linked_user_id) AND m.status='active' AND m.decision_status!='no' WHERE s.room_id=? ORDER BY s.created_at DESC,s.id DESC LIMIT 30").all(roomId) as Omit<Source,'visibility'>[];
+  const privateSources=db.prepare("SELECT x.id,COALESCE(x.user_id,g.linked_user_id,x.guest_id) AS memberId,x.body AS text,x.created_at AS createdAt FROM messages x LEFT JOIN guests g ON g.id=x.guest_id JOIN members m ON m.room_id=x.room_id AND (m.user_id=x.user_id OR m.guest_id=x.guest_id OR m.user_id=g.linked_user_id) AND m.status='active' AND m.decision_status!='no' WHERE x.room_id=? AND x.role='user' AND x.id IN (SELECT y.id FROM messages y WHERE y.room_id=x.room_id AND y.user_id IS x.user_id AND y.guest_id IS x.guest_id AND y.role='user' ORDER BY y.created_at DESC,y.id DESC LIMIT 8) ORDER BY x.created_at DESC,x.id DESC LIMIT 80").all(roomId) as Omit<Source,'visibility'>[];
   const sources:Source[]=[...publicSources.map(s=>({...s,visibility:'public' as const})),...privateSources.map(s=>({...s,visibility:'private' as const}))].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));
   const proposal=currentPlan(roomId),bulletin=currentBulletin(roomId);
   const prior=db.prepare('SELECT content_json AS content FROM room_semantic_analysis WHERE room_id=?').get(roomId) as {content:string|null}|undefined;
@@ -72,7 +72,7 @@ function validate(raw:unknown,context:Context):Analysis|null{
 
 async function modelJson(system:string,input:unknown,maxTokens:number):Promise<unknown>{
   const key=process.env.TOKENDANCE_API_KEY;if(!key)throw Error('model_unavailable');
-  const base=(process.env.TOKENDANCE_BASE_URL??'https://your-model-provider.example/gateway/v1').replace(/\/$/,'');
+  const base=(process.env.TOKENDANCE_BASE_URL??'').replace(/\/$/,'');
   const response=await fetch(`${base}/chat/completions`,{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},signal:AbortSignal.timeout(90000),body:JSON.stringify({model:process.env.TOKENDANCE_MODEL??'deepseek-v4.1-flash-1017',temperature:0,max_tokens:maxTokens,messages:[{role:'system',content:system},{role:'user',content:JSON.stringify(input)}]})});
   if(!response.ok)throw Error('model_http_'+response.status);
   const data=await response.json() as {choices?:{finish_reason?:string;message?:{content?:string}}[]};const content=data.choices?.[0]?.message?.content??'';
@@ -109,7 +109,7 @@ async function run(roomId:string){
     for(const conflict of analysis.conflicts.slice(0,2))for(const userId of conflict.targetIds){
       const key=crypto.createHash('sha256').update(JSON.stringify([conflict.kind,[...conflict.sourceIds].sort(),userId])).digest('hex');
       keep.add(key);
-      const existing=db.prepare("SELECT 1 FROM room_coordination_questions WHERE room_id=? AND user_id=? AND conflict_key=? AND status IN ('pending','answered')").get(roomId,userId,key);
+      const existing=db.prepare("SELECT 1 FROM room_coordination_questions WHERE room_id=? AND COALESCE(user_id,guest_id)=? AND conflict_key=? AND status IN ('pending','answered')").get(roomId,userId,key);
       if(!existing){
         for(let attempt=0;attempt<2;attempt++)try{questions.push({userId,key,text:await questionFor(context,conflict,userId)});break;}catch{/* A model failure must not create a fabricated question. */}
       }
@@ -124,9 +124,9 @@ async function run(roomId:string){
         else{db.prepare("UPDATE room_coordination_questions SET status='obsolete' WHERE id=?").run(previous.id);db.prepare("UPDATE notification_outbox SET status='expired',delivered_at=COALESCE(delivered_at,?) WHERE kind='coordination_question' AND json_extract(payload_json,'$.questionId')=? AND status='pending'").run(now(),previous.id);}
       }
       for(const q of questions){
-        if(db.prepare("SELECT 1 FROM room_coordination_questions WHERE room_id=? AND user_id=? AND conflict_key=? AND status IN ('pending','answered')").get(roomId,q.userId,q.key))continue;
-        const id=uid();db.prepare("INSERT INTO room_coordination_questions(id,room_id,user_id,analysis_signature,conflict_key,question,status,created_at) VALUES(?,?,?,?,?,?,'pending',?)").run(id,roomId,q.userId,context.signature,q.key,q.text,now());
-        enqueueNotification(q.userId,'coordination_question',{roomId,questionId:id},`coordination:${id}`);
+        if(db.prepare("SELECT 1 FROM room_coordination_questions WHERE room_id=? AND COALESCE(user_id,guest_id)=? AND conflict_key=? AND status IN ('pending','answered')").get(roomId,q.userId,q.key))continue;
+        const id=uid(),guest=!!db.prepare('SELECT 1 FROM guests WHERE id=?').get(q.userId);db.prepare(`INSERT INTO room_coordination_questions(id,room_id,${guest?'guest_id':'user_id'},analysis_signature,conflict_key,question,status,created_at) VALUES(?,?,?,?,?,?,'pending',?)`).run(id,roomId,q.userId,context.signature,q.key,q.text,now());
+        if(!guest)enqueueNotification(q.userId,'coordination_question',{roomId,questionId:id},`coordination:${id}`);
       }
     })();
     if(coordinationContext(roomId)?.signature===context.signature){
@@ -182,7 +182,7 @@ export function ownCoordination(roomId:string,userId:string){
   const context=coordinationContext(roomId);
   const row=db.prepare('SELECT input_signature AS signature,status,content_json AS content FROM room_semantic_analysis WHERE room_id=?').get(roomId) as {signature:string;status:string;content:string|null}|undefined;
   const valid=!!context&&row?.signature===context.signature;
-  const question=valid&&row?.status==='ready'?db.prepare("SELECT id,question,created_at AS createdAt FROM room_coordination_questions WHERE room_id=? AND user_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1").get(roomId,userId) as {id:string;question:string;createdAt:string}|undefined:undefined;
+  const question=valid&&row?.status==='ready'?db.prepare("SELECT id,question,created_at AS createdAt FROM room_coordination_questions WHERE room_id=? AND COALESCE(user_id,guest_id)=? AND status='pending' ORDER BY created_at DESC LIMIT 1").get(roomId,userId) as {id:string;question:string;createdAt:string}|undefined:undefined;
   const analysis=valid&&row?.status==='ready'&&row.content?JSON.parse(row.content) as Analysis:null;
   const hasHardConflict=!!analysis?.conflicts.some(conflict=>conflict.severity==='hard');
   const kindName:Record<ConflictKind,string>={date:'日期',time:'出发时间',area:'地点',transport:'交通距离',intensity:'活动强度',budget:'预算',activity:'活动内容',attendance:'参与安排',other:'安排'};
@@ -194,7 +194,7 @@ export function ownCoordination(roomId:string,userId:string){
     const ownEvidence=cited.find(source=>source.memberId===userId);
     return {kind:conflict.kind,label:kindName[conflict.kind],severity:conflict.severity,needsMyAnswer:conflict.targetIds.includes(userId),publicEvidence,ownContext:ownEvidence?`你提到「${ownEvidence.text.slice(0,60)}」`:null};
   })??[];
-  const answeredCount=(db.prepare("SELECT COUNT(*) AS n FROM room_coordination_questions WHERE room_id=? AND user_id=? AND status='answered'").get(roomId,userId) as {n:number}).n;
+  const answeredCount=(db.prepare("SELECT COUNT(*) AS n FROM room_coordination_questions WHERE room_id=? AND COALESCE(user_id,guest_id)=? AND status='answered'").get(roomId,userId) as {n:number}).n;
   const alternatives=analysis?.alternatives.map((option,index)=>{
     const cited=option.sourceIds.map(id=>sourceById.get(id)).filter((source):source is Source=>!!source);
     const visible=[...new Map(cited.filter(source=>source.visibility==='public'||source.memberId===userId).reverse().map(source=>[source.memberId,source])).values()].reverse().slice(0,4);

@@ -19,7 +19,7 @@ export const pendingSnapshot=(roomId:string):CoordinationSnapshot|null=>{
 const planSignature=(plan:Plan)=>JSON.stringify({date:plan.date,area:plan.area,segments:plan.segments.map(s=>({kind:s.kind,category:s.category,start:s.start,end:s.end,budgetCap:s.budgetCap}))});
 
 export function getMembers(roomId:string):MemberPreference[]{
-  const rows=db.prepare("SELECT m.user_id AS userId,u.display_name AS name,p.data_json AS dataJson FROM members m JOIN users u ON u.id=m.user_id JOIN preferences p ON p.room_id=m.room_id AND p.user_id=m.user_id WHERE m.room_id=? ORDER BY m.joined_at").all(roomId) as {userId:string;name:string;dataJson:string}[];
+  const rows=db.prepare("SELECT COALESCE(m.user_id,m.guest_id) AS userId,COALESCE(u.display_name,g.display_name) AS name,p.data_json AS dataJson FROM members m LEFT JOIN users u ON u.id=m.user_id LEFT JOIN guests g ON g.id=m.guest_id JOIN preferences p ON p.room_id=m.room_id AND (p.user_id=m.user_id OR p.guest_id=m.guest_id) WHERE m.room_id=? AND m.status='active' ORDER BY m.joined_at").all(roomId) as {userId:string;name:string;dataJson:string}[];
   return rows.map(r=>({userId:r.userId,name:r.name,preference:JSON.parse(r.dataJson) as Preference}));
 }
 export function currentPlan(roomId:string):{id:string;version:number;plan:Plan;kind:string}|null{
@@ -44,7 +44,7 @@ export function recoverPendingCoordination(){
 // publish relevant ideas. Private messages never seed this public brief.
 export function startBlankPlanFromPublicShares(roomId:string){
   const room=getRoom(roomId);if(!room||room.mode!=='blank'||room.current_proposal_id||room.phase==='final')return false;
-  const shares=db.prepare('SELECT author_id AS authorId,public_text AS text FROM room_public_shares WHERE room_id=? ORDER BY created_at,id').all(roomId) as {authorId:string;text:string}[];
+  const shares=db.prepare('SELECT COALESCE(s.author_id,g.linked_user_id,s.guest_id) AS authorId,s.public_text AS text FROM room_public_shares s LEFT JOIN guests g ON g.id=s.guest_id WHERE s.room_id=? ORDER BY s.created_at,s.id').all(roomId) as {authorId:string;text:string}[];
   const people=new Set<string>();const interests:{category:string;windowId:string|null;area:string|null}[]=[];
   for(const share of shares){const parsed=fallbackIntent(share.text);if(parsed.category){people.add(share.authorId);interests.push({category:parsed.category,windowId:parsed.windowId,area:parsed.area});}}
   if(people.size<2)return false;
@@ -88,7 +88,7 @@ export function coordinateRoom(roomId:string,expected:CoordinationSnapshot|null=
     const changes=current?describePlanChanges(current.plan,candidate):["初始草案"];
     emitEvent(roomId,"proposal",`主持人更新了第 ${version} 版讨论方案。${changes.length?`本次变更：${changes.join("、")}。`:""}请重新查看并确认。`);
     refreshBulletin(roomId);
-    for(const m of members)enqueueNotification(m.userId,"plan_updated",{roomId,version,changes},`plan:${roomId}:${version}:${m.userId}`);
+    for(const m of members)if(db.prepare('SELECT 1 FROM users WHERE id=?').get(m.userId))enqueueNotification(m.userId,"plan_updated",{roomId,version,changes},`plan:${roomId}:${version}:${m.userId}`);
     return true;
   })();
   if(updated)maybeAutoPoll(roomId,brief,members,locks,candidate);
@@ -131,14 +131,14 @@ export function createPoll(roomId:string,facet:string,options:PollOption[],quest
   return pollId;
 }
 
-export function vote(pollId:string,userId:string,optionId:string){
+export function vote(pollId:string,userId:string,optionId:string,guest=false){
   const row=db.prepare("SELECT * FROM polls WHERE id=? AND status='open'").get(pollId) as PollRow|undefined;
   if(!row)return false;
   const options=JSON.parse(row.options_json) as PollOption[];
   if(!options.some(o=>o.id===optionId))return false;
-  db.prepare("INSERT INTO poll_votes(poll_id,user_id,option_id,updated_at) VALUES(?,?,?,?) ON CONFLICT(poll_id,user_id) DO UPDATE SET option_id=excluded.option_id,updated_at=excluded.updated_at").run(pollId,userId,optionId,now());
-  const n=(db.prepare("SELECT COUNT(*) AS n FROM poll_votes WHERE poll_id=?").get(pollId) as {n:number}).n;
-  const total=(db.prepare("SELECT COUNT(*) AS n FROM members WHERE room_id=?").get(row.room_id) as {n:number}).n;
+  db.prepare(`INSERT INTO poll_votes(poll_id,${guest?'guest_id':'user_id'},option_id,updated_at) VALUES(?,?,?,?) ON CONFLICT(poll_id,${guest?'guest_id':'user_id'}) DO UPDATE SET option_id=excluded.option_id,updated_at=excluded.updated_at`).run(pollId,userId,optionId,now());
+  const n=(db.prepare("SELECT COUNT(*) AS n FROM poll_votes v JOIN members m ON m.room_id=? AND m.status='active' AND (m.user_id=v.user_id OR m.guest_id=v.guest_id) WHERE v.poll_id=?").get(row.room_id,pollId) as {n:number}).n;
+  const total=(db.prepare("SELECT COUNT(*) AS n FROM members WHERE room_id=? AND status='active'").get(row.room_id) as {n:number}).n;
   if(n>=total)closePoll(row.room_id,pollId);
   return true;
 }
@@ -146,7 +146,7 @@ export function vote(pollId:string,userId:string,optionId:string){
 export function closePoll(roomId:string,pollId:string){
   const row=db.prepare("SELECT * FROM polls WHERE id=? AND room_id=? AND status='open'").get(pollId,roomId) as PollRow|undefined;
   if(!row)return false;
-  const votes=db.prepare("SELECT option_id,COUNT(*) AS n FROM poll_votes WHERE poll_id=? GROUP BY option_id ORDER BY n DESC").all(pollId) as {option_id:string;n:number}[];
+  const votes=db.prepare("SELECT v.option_id,COUNT(*) AS n FROM poll_votes v JOIN members m ON m.room_id=? AND m.status='active' AND (m.user_id=v.user_id OR m.guest_id=v.guest_id) WHERE v.poll_id=? GROUP BY v.option_id ORDER BY n DESC").all(roomId,pollId) as {option_id:string;n:number}[];
   if(!votes.length)return false;
   const options=JSON.parse(row.options_json) as PollOption[];
   const current=currentPlan(roomId);

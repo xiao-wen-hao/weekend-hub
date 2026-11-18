@@ -12,3 +12,6 @@ body.capacitor-android .welcome-shell{padding-top:calc(40px + env(safe-area-inse
 body.capacitor-android .room-page,body.capacitor-android .dashboard{padding-bottom:env(safe-area-inset-bottom)}
 body.capacitor-android .chat-composer{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
 body.capacitor-android.keyboard-open .chat-column.show-mobile{height:calc(100dvh - 210px);min-height:250px}
+.create-room-modal{box-sizing:border-box;max-height:min(850px,calc(100dvh - 32px));overflow-y:auto;overscroll-behavior:contain}.create-room-modal .create-scroll{min-height:0;flex:1 1 auto}@media(max-width:760px){.create-room-modal{max-height:calc(100dvh - 24px)}.create-room-modal .create-scroll{overflow-y:auto}}
+.mobile-guide-trigger{margin-top:12px;padding:8px 0;border:0;background:none;color:#287947;font:inherit;font-weight:750;cursor:pointer}.mobile-guide-card{margin:0 0 20px;padding:14px 18px;border:1px solid #dce9da;border-radius:16px;background:#fffdf8;color:#52695a;line-height:1.65}.mobile-guide-card p{margin:6px 0}.mobile-guide-card strong{color:#245a3c}
+.modal-backdrop{z-index:60}

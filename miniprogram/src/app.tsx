@@ -1,3 +1,4 @@
-import { PropsWithChildren } from 'react'
+import { PropsWithChildren, useEffect } from 'react'
+import {applyLocale} from './i18n'
 import './app.scss'
-export default function App({children}: PropsWithChildren){return children}
+export default function App({children}: PropsWithChildren){useEffect(()=>{applyLocale()},[]);return children}
