@@ -1,50 +1,82 @@
-# 周末局 V2
+# 周末局 · Weekend Hub
 
-周末局是小型熟人圈的自然语言组局工具。成员先说出模糊的活动意愿；系统寻找潜在共同兴趣，**由人决定**是否发起讨论。讨论间的 AI 协助归纳共识、发现分歧和提出问题，最终方案仍须成员逐人确认。
+![周末局：从一句想法，到大家愿意参加的一场活动](docs/assets/weekend-hub-cover.svg)
+
+**让熟人之间零散的周末想法，慢慢变成一场真正能成行的活动。**
+
+在朋友群里，大家常说“都可以”，却各有时间、预算和活动偏好。周末局让成员先用自己的话表达想法，帮助小型熟人圈发现共同兴趣；当有人决定发起讨论，AI 再协助整理共识、指出分歧并提出需要商量的问题。是否邀请、是否接受方案、参加哪一项活动，始终由人决定。
+
+> 意愿不是参加承诺；发现共同兴趣不会自动建房；私人原话不会自动进入公共公告。
 
 ## 从想法到成行
 
-1. 加入熟人圈，自然语言表达意愿，核对 AI 理解后确认投递。
-2. 授权匹配后查看候选局；成员自行决定是否讨论及接受邀请。
-3. 在讨论间查看共享公告、私下表达限制，必要时参与投票。
-4. 核对当前方案版本，逐人确认并对每项活动分别报名。
+| 1 · 说出想法 | 2 · 发现机会 | 3 · 一起商量 | 4 · 确认成行 |
+| --- | --- | --- | --- |
+| “周末想去郊外走走，别太远。” | AI 提取明确条件，提示圈内可能相近的意愿 | 成员自行发起讨论，在共享公告和私人 AI 中补充意见 | 核对当前方案，逐人确认，再按活动分项报名 |
 
-意愿不等于邀请，进入讨论间不等于报名，沉默也不等于同意。私人原话默认不公开。
+自然语言可以保持模糊。时间、地点或预算暂时没想好，也可以先记录。模型输出会经过后端校验；未表达的条件不会被当成用户承诺。多人出现分歧时，系统可结合已授权的信息提出定向问题和方案建议，方案变更后需要重新确认。
 
-手机 Web 可通过限时、限定房间的邀请链接让 Guest 输入昵称参与讨论；Guest 可在之后关联正式账号。Web 和 Android 界面支持中英文切换，用户自己写的内容保持原文。
+## 产品界面
 
-## 代码和技术
+下面是运行中的 Android 应用截图，使用虚构的示例记录；它们不是设计稿。
 
-| 位置 | 用途 |
+<table>
+  <tr>
+    <td align="center"><img src="docs/assets/home.png" width="250" alt="周末局首页，展示消息和最近讨论"><br><sub>首页 · 最近讨论与待处理事项</sub></td>
+    <td align="center"><img src="docs/assets/discussions.png" width="250" alt="讨论间列表，展示进行中和已定案的讨论"><br><sub>讨论间 · 进行中与已结束</sub></td>
+    <td align="center"><img src="docs/assets/room-board.png" width="250" alt="讨论间公告牌，展示当前共识和方案草案"><br><sub>共享公告 · 共识、草案与进展</sub></td>
+  </tr>
+</table>
+
+正式用户使用首页、讨论间、熟人圈和“我的”四个入口。手机 Web 的受邀 Guest 可以通过**限时、限定房间**的链接输入昵称参与当前讨论，之后再关联正式账号；Guest 不能访问熟人圈或其他房间。Web 和 Android 界面支持中英文切换，用户自己写的内容保持原文。
+
+## 我们如何处理 AI 与隐私
+
+- **AI 帮忙理解与协调**：解析意愿、寻找潜在共同兴趣、整理经授权的公开信息、识别诉求差异并生成协调建议。
+- **后端负责最终规则**：身份与房间权限、邀请、方案版本、投票、确认和报名由服务端校验并持久化，不能由模型回复直接改写。
+- **成员控制公开范围**：私人 AI 会话默认仅本人可读。把私人内容放进共享公告，需要原作者明确授权具体内容。
+- **失败有边界**：没有模型服务配置时，部分环节使用规则降级；复杂语义协调依赖开发者自行配置的模型服务。
+
+周末局不提供场所预订，也不会替成员承诺参加。更多设计边界见[产品说明](docs/PRODUCT.md)和[模型与隐私说明](docs/LLM.md)。
+
+## 技术实现
+
+```text
+React + Vite Web ─────┐
+Capacitor Android ────┼──> Express + TypeScript API ──> SQLite
+Taro 微信小程序 ────────┘                └──────────────> 可配置的模型服务
+```
+
+三个客户端共用同一后端业务规则。Web 与 Android 复用 React 界面；微信小程序由 Taro 独立实现。后端维护成员权限、讨论状态、异步协调、方案版本及数据持久化。详见[系统架构](docs/ARCHITECTURE.md)。
+
+| 目录 | 内容 |
 | --- | --- |
-| `server/server/` | Express + TypeScript API、权限、协调任务与 SQLite 迁移 |
+| `server/server/` | Express API、协调逻辑、权限和 SQLite 迁移 |
 | `server/src/` | React + Vite Web 界面 |
-| `server/android/` | Capacitor Android Studio 工程，复用 Web 界面 |
-| `miniprogram/` | Taro + React 微信小程序，调用同一后端 |
-| `server/shared/` | 跨服务端和 Web 使用的类型与纯业务工具 |
-| `server/tests/` | 单元与集成测试 |
+| `server/android/` | Capacitor Android Studio 工程 |
+| `miniprogram/` | Taro + React 微信小程序 |
+| `server/tests/` | 单元和集成测试 |
 
-业务状态、权限、投票、方案版本和报名以服务端数据库为准。详见[架构文档](docs/ARCHITECTURE.md)。
+## 本地运行
 
-## 五分钟启动 Web
+需要 **Node.js 22+**。进入 `server/` 后安装依赖并复制示例环境文件：
 
-需要 Node.js **22+**。在仓库的 `server/` 目录执行：
-
-```powershell
+```bash
+cd server
 npm ci
-Copy-Item .env.example .env
+cp .env.example .env
 npm run dev
 ```
 
-打开 `http://localhost:3000`。首次启动会在 `server/data/` 自动建立空 SQLite 库并执行迁移；建议在 `.env` 中给自己的开发库设置独立 `DATA_DIR`。没有自己的模型 Key 时部分解析与匹配会降级，语义协商不可用。详细配置与三端命令见[开发指南](docs/DEVELOPMENT.md)。
+浏览器打开 `http://localhost:3000`。首次启动会在 `server/data/` 创建本地 SQLite 数据库并执行迁移。模型 Key 和服务地址只填写在被 Git 忽略的本地 `.env` 中；仓库不提供公共试用数据库、邀请码或在线服务地址。Android 和微信小程序的构建步骤见[开发指南](docs/DEVELOPMENT.md)。
 
-## 文档
+## 继续阅读
 
-- [产品概念与流程](docs/PRODUCT.md)
-- [系统架构与关键目录](docs/ARCHITECTURE.md)
+- [产品概念与完整流程](docs/PRODUCT.md)
+- [系统架构](docs/ARCHITECTURE.md)
 - [数据库与 API](docs/DATABASE_AND_API.md)
-- [LLM、降级和隐私](docs/LLM.md)
-- [从零开发与测试](docs/DEVELOPMENT.md)
-- [贡献指南](CONTRIBUTING.md) · [安全报告](SECURITY.md) · [变更记录](CHANGELOG.md)
+- [LLM、降级与隐私](docs/LLM.md)
+- [开发与测试](docs/DEVELOPMENT.md)
+- [参与贡献](CONTRIBUTING.md) · [安全报告](SECURITY.md) · [变更记录](CHANGELOG.md)
 
-项目采用 [MIT 许可证](LICENSE)。仓库不提供私人试用库、服务地址或模型凭据；开发者使用自己的本地数据和 Key。
+项目采用 [MIT 许可证](LICENSE)。欢迎通过 Issue 和 Pull Request 交流改进。
